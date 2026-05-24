@@ -190,15 +190,11 @@ async function executeTool(name, args) {
 }
 
 async function getPageContent() {
-  // Try current window, then last focused window
-  let [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab) {
-    [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  }
-  if (!tab) return { error: 'No active tab' };
-  if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
-    return { error: 'Cannot access this page' };
-  }
+  // Query all active tabs across all windows (side panel context may not be the browser window)
+  const allTabs = await chrome.tabs.query({ active: true });
+  const tab = allTabs.find(t => t.url && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-extension://'));
+  if (!tab) return { error: 'No accessible tab found' };
+  console.log('[PageContent] targeting tab:', tab.url);
 
   // Try content script first
   const result = await new Promise((resolve) => {
