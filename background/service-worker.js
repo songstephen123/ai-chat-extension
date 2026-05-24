@@ -277,8 +277,14 @@ async function startVoiceMode() {
         handleRealtimeEvent(msg.event);
         break;
       case 'realtime_error':
+        console.error('[Voice] realtime error:', msg.error);
         broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + msg.error });
-        cleanupVoice();
+        voiceActive = false;
+        realtimeSessionReady = false;
+        if (realtimePort) {
+          realtimePort.disconnect();
+          realtimePort = null;
+        }
         break;
       case 'realtime_disconnected':
         cleanupVoice();
@@ -312,15 +318,18 @@ function stopVoiceMode() {
 function sendSessionUpdate() {
   if (!realtimePort) return;
 
+  // Client VAD mode: omit turn_detection entirely (null causes 400 errors)
   realtimePort.postMessage({
     type: 'session.update',
     session: {
       model: REALTIME_MODEL,
       voice: 'tongtong',
+      modalities: ['audio', 'text'],
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },
-      turn_detection: null,
+      temperature: 0.7,
+      max_response_output_tokens: 'inf',
       tools: TOOLS.map(t => ({
         type: 'function',
         name: t.name,

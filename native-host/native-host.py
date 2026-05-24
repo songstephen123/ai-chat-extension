@@ -64,7 +64,9 @@ def generate_jwt(api_key):
 
 def run_command(cmd, timeout=60):
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        env = os.environ.copy()
+        env['PATH'] = '/Users/songstephen/.nvm/versions/node/v24.13.0/bin:/opt/homebrew/bin:/usr/local/bin:' + env.get('PATH', '')
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
         return {
             'success': result.returncode == 0,
             'stdout': result.stdout[:10000],
@@ -101,8 +103,8 @@ def handle_lark(args):
                 if url:
                     result['doc_url'] = url
                 elif doc_id:
-                    result['doc_url'] = f'https://bytedance.larkoffice.com/doc/{doc_id}'
-            except:
+                    result['doc_url'] = f'https://zcnp0rxdinjy.feishu.cn/docx/{doc_id}'
+            except Exception:
                 pass
         return result
 
