@@ -114,6 +114,32 @@ const TOOLS = [
   },
   {
     type: 'function',
+    name: 'lark_fetch_doc',
+    description: '获取飞书文档内容',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '飞书文档 URL 或文档 ID' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_update_doc',
+    description: '更新飞书文档内容（追加、覆盖或替换）',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '飞书文档 URL 或文档 ID' },
+        content: { type: 'string', description: '要写入的内容（Markdown 格式）' },
+        mode: { type: 'string', enum: ['append', 'overwrite'], description: '写入模式：append 追加，overwrite 覆盖' },
+      },
+      required: ['url', 'content'],
+    },
+  },
+  {
+    type: 'function',
     name: 'generate_html_slides',
     description: '根据内容生成 HTML 幻灯片演示文稿',
     parameters: {
@@ -171,6 +197,12 @@ async function executeTool(name, args) {
         break;
       case 'lark_search_contact':
         result = await executeNativeCommand('lark', { action: 'search_contact', query: args.query });
+        break;
+      case 'lark_fetch_doc':
+        result = await executeNativeCommand('lark', { action: 'fetch_doc', url: args.url });
+        break;
+      case 'lark_update_doc':
+        result = await executeNativeCommand('lark', { action: 'update_doc', url: args.url, content: args.content, mode: args.mode || 'append' });
         break;
       case 'generate_html_slides':
         result = await executeNativeCommand('slides', args);
@@ -325,7 +357,7 @@ function sendSessionUpdate() {
       model: REALTIME_MODEL,
       voice: 'tongtong',
       modalities: ['audio', 'text'],
-      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 搜索飞书文档 → 调用 lark_search_docs\n- 创建飞书文档 → 调用 lark_create_doc\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 生成幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，直接调用工具即可。',
+      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 搜索飞书文档 → 调用 lark_search_docs\n- 获取飞书文档内容 → 调用 lark_fetch_doc\n- 创建飞书文档 → 调用 lark_create_doc\n- 更新飞书文档 → 调用 lark_update_doc\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 生成幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，直接调用工具即可。',
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },

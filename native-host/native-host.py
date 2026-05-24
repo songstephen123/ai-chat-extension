@@ -85,48 +85,28 @@ def handle_lark(args):
 
     if action == 'search_docs':
         query = args.get('query', '')
-        jq_filter = '{ok, results: [.data.results[:5][] | {title: (.title_highlighted | gsub("<h>";"") | gsub("</h>";"")), url: .result_meta.url, type: .result_meta.doc_types, owner: .result_meta.owner_name}]}'
-        cmd = ['npx', '@larksuite/cli', 'drive', '+search', '--query', query, '--jq', jq_filter]
+        jq_filter = '{ok, results: [.data.items[:5][] | {title: .title, url: .url, type: .doc_type, owner: .owner}]}'
+        cmd = ['npx', '@larksuite/cli', 'docs', '+search', '--query', query, '--jq', jq_filter]
         return run_command(cmd)
 
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
-        # Step 1: create empty doc
-        result = run_command(
-            ['npx', '@larksuite/cli', 'api', 'POST', '/open-apis/docx/v1/documents',
-             '--data', json.dumps({'title': title})])
-        if not result['success']:
-            return result
-        try:
-            resp = json.loads(result['stdout'])
-            doc_id = resp['data']['document']['document_id']
-        except Exception:
-            return result
-        result['doc_url'] = f'https://zcnp0rxdinjy.feishu.cn/docx/{doc_id}'
-        # Step 2: add content blocks
+        cmd = ['npx', '@larksuite/cli', 'docs', '+create', '--title', title]
         if content.strip():
-            blocks = []
-            for line in content.split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                if line.startswith('### '):
-                    blocks.append({'block_type': 4, 'heading3': {'elements': [{'text_run': {'content': line[4:]}}]}})
-                elif line.startswith('## '):
-                    blocks.append({'block_type': 3, 'heading2': {'elements': [{'text_run': {'content': line[3:]}}]}})
-                elif line.startswith('# '):
-                    blocks.append({'block_type': 2, 'heading1': {'elements': [{'text_run': {'content': line[2:]}}]}})
-                elif line.startswith('- '):
-                    blocks.append({'block_type': 16, 'bullet': {'elements': [{'text_run': {'content': line[2:]}}]}})
-                else:
-                    blocks.append({'block_type': 2, 'text': {'elements': [{'text_run': {'content': line}}]}})
-            if blocks:
-                run_command(
-                    ['npx', '@larksuite/cli', 'api', 'POST',
-                     f'/open-apis/docx/v1/documents/{doc_id}/blocks/{doc_id}/children',
-                     '--params', '{"document_revision_id":-1}',
-                     '--data', json.dumps({'children': blocks})])
+            cmd.extend(['--markdown', content])
+        jq_filter = '{ok, doc_url: .data.document.url, doc_id: .data.document.document_id}'
+        cmd.extend(['--jq', jq_filter])
+        result = run_command(cmd)
+        if result['success']:
+            try:
+                resp = json.loads(result['stdout'])
+                if resp.get('doc_url'):
+                    result['doc_url'] = resp['doc_url']
+                elif resp.get('doc_id'):
+                    result['doc_url'] = f'https://zcnp0rxdinjy.feishu.cn/docx/{resp["doc_id"]}'
+            except Exception:
+                pass
         return result
 
     elif action == 'send_message':
@@ -162,6 +142,19 @@ def handle_lark(args):
     elif action == 'search_contact':
         query = args.get('query', '')
         cmd = ['npx', '@larksuite/cli', 'contact', '+search-user', '--query', query]
+        return run_command(cmd)
+
+    elif action == 'fetch_doc':
+        doc_url = args.get('url', args.get('doc_id', ''))
+        cmd = ['npx', '@larksuite/cli', 'docs', '+fetch', '--doc', doc_url]
+        return run_command(cmd)
+
+    elif action == 'update_doc':
+        doc_url = args.get('url', args.get('doc_id', ''))
+        markdown = args.get('content', '')
+        mode = args.get('mode', 'append')
+        cmd = ['npx', '@larksuite/cli', 'docs', '+update', '--doc', doc_url,
+               '--mode', mode, '--markdown', markdown]
         return run_command(cmd)
 
     return {'success': False, 'error': f'Unknown lark action: {action}'}
