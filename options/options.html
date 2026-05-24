@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Voice Assistant - Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Settings</h1>
+
+    <section class="section">
+      <h2>智谱 API Key</h2>
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="glmApiKey" placeholder="Zhipu API Key">
+        <small>从 <a href="https://open.bigmodel.cn" target="_blank">open.bigmodel.cn</a> 获取</small>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Native Host 状态</h2>
+      <div class="field">
+        <label>Lark CLI / Native Host</label>
+        <span id="larkStatus">检查中...</span>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="btn-save" class="btn-primary">保存</button>
+      <span id="save-status" class="hidden">已保存</span>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

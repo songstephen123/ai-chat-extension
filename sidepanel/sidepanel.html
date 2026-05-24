@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Voice Assistant</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <h1>AI 语音助理</h1>
+    <button id="btn-settings" title="设置">&#9881;</button>
+  </header>
+
+  <div id="messages"></div>
+
+  <div id="tool-status" class="hidden">
+    <span id="tool-status-text"></span>
+  </div>
+
+  <footer>
+    <div id="voice-status" class="hidden">
+      <span id="voice-status-dot"></span>
+      <span id="voice-status-text"></span>
+    </div>
+    <button id="btn-voice" title="语音对话">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+    </button>
+  </footer>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

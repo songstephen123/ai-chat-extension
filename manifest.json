@@ -1,0 +1,46 @@
+{
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxenjXWpHCQcotj09VM2sv2WZja6u8+O+FJPeAZpWBEuhK+wrFM1wflVJtASeoT1TyEg+/85vvwp3VpDnr3a61NpdyamMPrtdVbVX64BS78XEfg0tr4f3MnIzY8EBZnqqhWg/3/rPL7OerppcZR+4MAHUU+72vhb/qQP5mcfJOTuBMh+lYvt+gJVSAmdKNi6yB8KbUl02Ci3f7+td5aXSlfd+Zbrw1a4D9bToLvZGMkBy5wR7FaYRcs8Mo0++J0aSqxrPFRYGZK2hsmjLg52vwgL09sMrmeB6iZ4k74jm+OM2+6E4ZuiDa15yd903bEMLLgEAJLR03d6vdpHuEeRreQIDAQAB",
+  "manifest_version": 3,
+  "name": "AI Voice Assistant",
+  "version": "1.0.0",
+  "description": "AI语音助理 - 语音对话、飞书操作、幻灯片生成、网页问答",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "sidePanel",
+    "nativeMessaging",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://open.bigmodel.cn/",
+    "<all_urls>"
+  ],
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "AI Voice Assistant",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["lib/Readability.min.js", "content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
