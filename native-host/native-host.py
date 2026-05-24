@@ -83,7 +83,8 @@ def handle_lark(args):
 
     if action == 'search_docs':
         query = args.get('query', '')
-        cmd = ['npx', '@larksuite/cli', 'drive', '+search', '--query', query]
+        jq_filter = '{ok, results: [.data.results[:5][] | {title: (.title_highlighted | gsub("<h>";"") | gsub("</h>";"")), url: .result_meta.url, type: .result_meta.doc_types, owner: .result_meta.owner_name}]}'
+        cmd = ['npx', '@larksuite/cli', 'drive', '+search', '--query', query, '--jq', jq_filter]
         return run_command(cmd)
 
     elif action == 'create_doc':
