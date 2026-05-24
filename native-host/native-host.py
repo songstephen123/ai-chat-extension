@@ -92,20 +92,41 @@ def handle_lark(args):
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
-        cmd = ['npx', '@larksuite/cli', 'docs', '+create',
-               '--title', title, '--markdown', content]
-        result = run_command(cmd)
-        if result['success']:
-            try:
-                resp = json.loads(result['stdout'])
-                doc_id = resp.get('data', {}).get('document', {}).get('document_id', '')
-                url = resp.get('data', {}).get('document', {}).get('url', '')
-                if url:
-                    result['doc_url'] = url
-                elif doc_id:
-                    result['doc_url'] = f'https://zcnp0rxdinjy.feishu.cn/docx/{doc_id}'
-            except Exception:
-                pass
+        # Step 1: create empty doc
+        result = run_command(
+            ['npx', '@larksuite/cli', 'api', 'POST', '/open-apis/docx/v1/documents',
+             '--data', json.dumps({'title': title})])
+        if not result['success']:
+            return result
+        try:
+            resp = json.loads(result['stdout'])
+            doc_id = resp['data']['document']['document_id']
+        except Exception:
+            return result
+        result['doc_url'] = f'https://zcnp0rxdinjy.feishu.cn/docx/{doc_id}'
+        # Step 2: add content blocks
+        if content.strip():
+            blocks = []
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('### '):
+                    blocks.append({'block_type': 4, 'heading3': {'elements': [{'text_run': {'content': line[4:]}}]}})
+                elif line.startswith('## '):
+                    blocks.append({'block_type': 3, 'heading2': {'elements': [{'text_run': {'content': line[3:]}}]}})
+                elif line.startswith('# '):
+                    blocks.append({'block_type': 2, 'heading1': {'elements': [{'text_run': {'content': line[2:]}}]}})
+                elif line.startswith('- '):
+                    blocks.append({'block_type': 16, 'bullet': {'elements': [{'text_run': {'content': line[2:]}}]}})
+                else:
+                    blocks.append({'block_type': 2, 'text': {'elements': [{'text_run': {'content': line}}]}})
+            if blocks:
+                run_command(
+                    ['npx', '@larksuite/cli', 'api', 'POST',
+                     f'/open-apis/docx/v1/documents/{doc_id}/blocks/{doc_id}/children',
+                     '--params', '{"document_revision_id":-1}',
+                     '--data', json.dumps({'children': blocks})])
         return result
 
     elif action == 'send_message':

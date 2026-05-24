@@ -325,6 +325,7 @@ function sendSessionUpdate() {
       model: REALTIME_MODEL,
       voice: 'tongtong',
       modalities: ['audio', 'text'],
+      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 搜索飞书文档 → 调用 lark_search_docs\n- 创建飞书文档 → 调用 lark_create_doc\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 生成幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，直接调用工具即可。',
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },
