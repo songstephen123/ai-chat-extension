@@ -83,21 +83,23 @@ def handle_lark(args):
 
     if action == 'search_docs':
         query = args.get('query', '')
-        cmd = ['npx', '@larksuite/cli', 'api', 'GET', '/open-apis/suite/docs/search',
-               '--params', f'query={query}&page_size=10']
+        cmd = ['npx', '@larksuite/cli', 'drive', '+search', '--query', query]
         return run_command(cmd)
 
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
-        cmd = ['npx', '@larksuite/cli', 'api', 'POST', '/open-apis/doc/v2/create',
-               '--data', json.dumps({'title': title, 'content': content})]
+        cmd = ['npx', '@larksuite/cli', 'docs', '+create',
+               '--title', title, '--markdown', content]
         result = run_command(cmd)
         if result['success']:
             try:
                 resp = json.loads(result['stdout'])
                 doc_id = resp.get('data', {}).get('document', {}).get('document_id', '')
-                if doc_id:
+                url = resp.get('data', {}).get('document', {}).get('url', '')
+                if url:
+                    result['doc_url'] = url
+                elif doc_id:
                     result['doc_url'] = f'https://bytedance.larkoffice.com/doc/{doc_id}'
             except:
                 pass
@@ -106,13 +108,36 @@ def handle_lark(args):
     elif action == 'send_message':
         text = args.get('text', '')
         chat_id = args.get('chat_id', '')
-        data = {
-            'receive_id': chat_id,
-            'msg_type': 'text',
-            'content': json.dumps({'text': text}),
-        }
-        cmd = ['npx', '@larksuite/cli', 'api', 'POST', '/open-apis/im/v1/messages',
-               '--params', 'receive_id_type=chat_id', '--data', json.dumps(data)]
+        cmd = ['npx', '@larksuite/cli', 'im', '+messages-send',
+               '--chat-id', chat_id, '--text', text]
+        return run_command(cmd)
+
+    elif action == 'calendar':
+        sub_action = args.get('action_type', args.get('action', 'agenda'))
+        if sub_action == 'agenda':
+            cmd = ['npx', '@larksuite/cli', 'calendar', '+agenda']
+            return run_command(cmd)
+        elif sub_action == 'create':
+            title = args.get('title', '')
+            start_time = args.get('start_time', '')
+            end_time = args.get('end_time', '')
+            cmd = ['npx', '@larksuite/cli', 'calendar', '+create',
+                   '--title', title]
+            if start_time:
+                cmd.extend(['--start-time', start_time])
+            if end_time:
+                cmd.extend(['--end-time', end_time])
+            return run_command(cmd)
+        return {'success': False, 'error': f'Unknown calendar action: {sub_action}'}
+
+    elif action == 'create_task':
+        title = args.get('title', '')
+        cmd = ['npx', '@larksuite/cli', 'task', '+create', '--title', title]
+        return run_command(cmd)
+
+    elif action == 'search_contact':
+        query = args.get('query', '')
+        cmd = ['npx', '@larksuite/cli', 'contact', '+search-user', '--query', query]
         return run_command(cmd)
 
     return {'success': False, 'error': f'Unknown lark action: {action}'}

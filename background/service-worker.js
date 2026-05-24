@@ -161,7 +161,7 @@ async function executeTool(name, args) {
       case 'lark_calendar':
         try {
           const calendarArgs = typeof args.args === 'string' ? JSON.parse(args.args) : (args.args || {});
-          result = await executeNativeCommand('lark', { action: 'calendar', ...calendarArgs });
+          result = await executeNativeCommand('lark', { action: 'calendar', action_type: args.action, ...calendarArgs });
         } catch (e) {
           result = await executeNativeCommand('lark', { action: 'calendar', action_type: args.action });
         }
