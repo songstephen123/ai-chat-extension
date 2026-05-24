@@ -85,16 +85,17 @@ def handle_lark(args):
 
     if action == 'search_docs':
         query = args.get('query', '')
-        jq_filter = '{ok, results: [.data.items[:5][] | {title: .title, url: .url, type: .doc_type, owner: .owner}]}'
+        jq_filter = '{ok, results: [.data.results[:5][] | {title: (.title_highlighted | gsub("<h>";"") | gsub("</h>";"")), url: .result_meta.url, type: .result_meta.doc_types, owner: .result_meta.owner_name}]}'
         cmd = ['npx', '@larksuite/cli', 'docs', '+search', '--query', query, '--jq', jq_filter]
         return run_command(cmd)
 
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
-        cmd = ['npx', '@larksuite/cli', 'docs', '+create', '--title', title]
-        if content.strip():
-            cmd.extend(['--markdown', content])
+        doc_content = f'<title>{title}</title>\n{content}' if content.strip() else f'<title>{title}</title>'
+        cmd = ['npx', '@larksuite/cli', 'docs', '+create',
+               '--api-version', 'v2', '--doc-format', 'markdown',
+               '--content', doc_content]
         jq_filter = '{ok, doc_url: .data.document.url, doc_id: .data.document.document_id}'
         cmd.extend(['--jq', jq_filter])
         result = run_command(cmd)
@@ -146,15 +147,18 @@ def handle_lark(args):
 
     elif action == 'fetch_doc':
         doc_url = args.get('url', args.get('doc_id', ''))
-        cmd = ['npx', '@larksuite/cli', 'docs', '+fetch', '--doc', doc_url]
+        cmd = ['npx', '@larksuite/cli', 'docs', '+fetch',
+               '--api-version', 'v2', '--doc-format', 'markdown', '--doc', doc_url]
         return run_command(cmd)
 
     elif action == 'update_doc':
         doc_url = args.get('url', args.get('doc_id', ''))
         markdown = args.get('content', '')
         mode = args.get('mode', 'append')
-        cmd = ['npx', '@larksuite/cli', 'docs', '+update', '--doc', doc_url,
-               '--mode', mode, '--markdown', markdown]
+        cmd = ['npx', '@larksuite/cli', 'docs', '+update',
+               '--api-version', 'v2', '--command', mode,
+               '--doc-format', 'markdown', '--content', markdown,
+               '--doc', doc_url]
         return run_command(cmd)
 
     return {'success': False, 'error': f'Unknown lark action: {action}'}
