@@ -92,7 +92,7 @@ def handle_lark(args):
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
-        doc_content = f'<title>{title}</title>\n{content}' if content.strip() else f'<title>{title}</title>'
+        doc_content = f'# {title}\n\n{content}' if content.strip() else f'# {title}'
         cmd = ['npx', '@larksuite/cli', 'docs', '+create',
                '--api-version', 'v2', '--doc-format', 'markdown',
                '--content', doc_content]
