@@ -126,6 +126,104 @@ const TOOLS = [
   },
   {
     type: 'function',
+    name: 'lark_cli_help',
+    description: '查看 Lark CLI 命令帮助，用于发现飞书 CLI 支持的业务域、快捷命令、参数和用法',
+    parameters: {
+      type: 'object',
+      properties: {
+        argv: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'lark-cli 后面的参数数组，例如 ["calendar", "--help"] 或 ["docs", "+search", "--help"]。不要包含 lark-cli 本身。',
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_cli_schema',
+    description: '查看 Lark CLI 某个 OpenAPI 方法的参数、scope、风险级别和类型定义',
+    parameters: {
+      type: 'object',
+      properties: {
+        method: {
+          type: 'string',
+          description: 'API 方法名，例如 calendar.events.create、im.message.create、drive.file.list',
+        },
+        format: {
+          type: 'string',
+          enum: ['json', 'pretty'],
+          description: '输出格式，默认 json',
+        },
+      },
+      required: ['method'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_cli_api',
+    description: '通过 Lark CLI 的 raw API 模式调用飞书开放平台接口，可覆盖 shortcuts 未封装的 API',
+    parameters: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], description: 'HTTP 方法' },
+        path: { type: 'string', description: 'OpenAPI 路径，例如 /open-apis/calendar/v4/calendars' },
+        params: { type: 'string', description: 'URL/query 参数 JSON 字符串，可省略' },
+        data: { type: 'string', description: '请求体 JSON 字符串，可省略' },
+        as: { type: 'string', enum: ['user', 'bot'], description: '调用身份，可省略' },
+        page_all: { type: 'boolean', description: '是否自动分页获取全部结果' },
+        jq: { type: 'string', description: 'jq 过滤表达式，用于裁剪输出' },
+        dry_run: { type: 'boolean', description: '只预览请求，不实际执行写入' },
+      },
+      required: ['method', 'path'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_cli_run',
+    description: '执行任意 Lark CLI 业务命令，用于使用 docs、drive、base、sheets、slides、im、mail、calendar、task、wiki、approval、okr、minutes、vc、whiteboard 等全部能力。优先先用 lark_cli_help 或 lark_cli_schema 确认参数。',
+    parameters: {
+      type: 'object',
+      properties: {
+        argv: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'lark-cli 后面的参数数组，例如 ["sheets", "+create", "--title", "周报"]。不要包含 lark-cli 本身，不要使用 shell 字符串。',
+        },
+        timeout_seconds: { type: 'number', description: '超时时间，默认 60 秒，最大 180 秒' },
+        dry_run: { type: 'boolean', description: '对写操作先追加 --dry-run 预览请求' },
+      },
+      required: ['argv'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_doc_to_frontend_slides',
+    description: '读取飞书文档，并使用 frontend-slides skill 准备或生成精美 HTML/PPT 风格演示稿',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '飞书文档 URL 或文档 ID' },
+        title: { type: 'string', description: '演示稿标题，可省略' },
+        mode: {
+          type: 'string',
+          enum: ['prepare', 'generate'],
+          description: 'prepare 只生成转换工作包；generate 会尝试调用本机 Claude Code + frontend-slides 直接生成 HTML',
+        },
+        style: {
+          type: 'string',
+          description: '期望视觉风格，例如 Bold Signal、Swiss Modern、Dark Botanical、Neon Cyber；省略则自动选择',
+        },
+        slide_count: {
+          type: 'number',
+          description: '期望页数，默认 10-14 页',
+        },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    type: 'function',
     name: 'lark_update_doc',
     description: '更新飞书文档内容（追加、覆盖或替换）',
     parameters: {
@@ -200,6 +298,42 @@ async function executeTool(name, args) {
         break;
       case 'lark_fetch_doc':
         result = await executeNativeCommand('lark', { action: 'fetch_doc', url: args.url });
+        break;
+      case 'lark_cli_help':
+        result = await executeNativeCommand('lark', { action: 'cli_help', argv: args.argv || [] });
+        break;
+      case 'lark_cli_schema':
+        result = await executeNativeCommand('lark', { action: 'schema', method: args.method, format: args.format || 'json' });
+        break;
+      case 'lark_cli_api':
+        result = await executeNativeCommand('lark', {
+          action: 'api',
+          method: args.method,
+          path: args.path,
+          params: args.params,
+          data: args.data,
+          as: args.as,
+          page_all: args.page_all,
+          jq: args.jq,
+          dry_run: args.dry_run,
+        });
+        break;
+      case 'lark_cli_run':
+        result = await executeNativeCommand('lark', {
+          action: 'run',
+          argv: args.argv,
+          timeout_seconds: args.timeout_seconds,
+          dry_run: args.dry_run,
+        });
+        break;
+      case 'lark_doc_to_frontend_slides':
+        result = await executeNativeCommand('frontend_slides', {
+          url: args.url,
+          title: args.title,
+          mode: args.mode || 'prepare',
+          style: args.style,
+          slide_count: args.slide_count,
+        });
         break;
       case 'lark_update_doc':
         result = await executeNativeCommand('lark', { action: 'update_doc', url: args.url, content: args.content, mode: args.mode || 'append' });
@@ -357,7 +491,7 @@ function sendSessionUpdate() {
       model: REALTIME_MODEL,
       voice: 'tongtong',
       modalities: ['audio', 'text'],
-      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 搜索飞书文档 → 调用 lark_search_docs\n- 获取飞书文档内容 → 调用 lark_fetch_doc\n- 创建飞书文档 → 调用 lark_create_doc\n- 更新飞书文档 → 调用 lark_update_doc\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 生成幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，直接调用工具即可。',
+      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 其他任何飞书/Lark/多维表格/云文档/云盘/知识库/邮件/审批/OKR/妙记/视频会议/白板/应用/通讯录/电子表格/幻灯片能力 → 先用 lark_cli_help 或 lark_cli_schema 查询参数，再用 lark_cli_run 或 lark_cli_api 执行\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认。',
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },

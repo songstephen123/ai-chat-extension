@@ -18,6 +18,7 @@ import hmac
 import hashlib
 import base64
 import time
+import re
 
 try:
     import websockets
@@ -62,6 +63,15 @@ def generate_jwt(api_key):
 
 # --- CLI command execution ---
 
+LARK_CLI_BIN = 'lark-cli'
+LARK_ALLOWED_ROOTS = {
+    'api', 'schema', 'help', 'doctor',
+    'approval', 'apps', 'attendance', 'base', 'calendar', 'contact',
+    'docs', 'drive', 'event', 'im', 'mail', 'markdown', 'minutes',
+    'okr', 'sheets', 'slides', 'task', 'vc', 'whiteboard', 'wiki',
+}
+LARK_BLOCKED_ARGS = {'--yes'}
+
 def run_command(cmd, timeout=60):
     try:
         env = os.environ.copy()
@@ -77,6 +87,66 @@ def run_command(cmd, timeout=60):
         return {'success': False, 'error': 'Command timed out'}
     except Exception as e:
         return {'success': False, 'error': str(e)}
+
+def _parse_json_maybe(value):
+    if value is None or value == '':
+        return None
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+def _normalize_lark_argv(argv):
+    if argv is None:
+        argv = []
+    if not isinstance(argv, list):
+        return None, 'argv must be an array of strings'
+    normalized = []
+    for part in argv:
+        if not isinstance(part, str):
+            return None, 'argv must contain only strings'
+        if '\x00' in part:
+            return None, 'argv contains an invalid NUL byte'
+        if part == LARK_CLI_BIN:
+            return None, 'argv must not include lark-cli itself'
+        if part in LARK_BLOCKED_ARGS:
+            return None, '--yes is blocked; high-risk writes must surface confirmation_required to the user'
+        normalized.append(part)
+    if len(normalized) > 80:
+        return None, 'argv is too long'
+    root = normalized[0] if normalized else 'help'
+    if root not in LARK_ALLOWED_ROOTS:
+        allowed = ', '.join(sorted(LARK_ALLOWED_ROOTS))
+        return None, f'Unsupported lark-cli command root: {root}. Allowed roots: {allowed}'
+    return normalized, None
+
+def _run_lark_cli(argv, timeout=60):
+    normalized, error = _normalize_lark_argv(argv)
+    if error:
+        return {'success': False, 'error': error}
+
+    result = run_command([LARK_CLI_BIN] + normalized, timeout=timeout)
+    if result.get('returncode') == 10:
+        try:
+            envelope = json.loads(result.get('stderr') or result.get('stdout') or '{}')
+            if envelope.get('error', {}).get('type') == 'confirmation_required':
+                result['confirmation_required'] = True
+                result['confirmation'] = envelope
+        except Exception:
+            result['confirmation_required'] = True
+    return result
+
+def _timeout_from_args(args):
+    try:
+        value = int(args.get('timeout_seconds', 60))
+    except Exception:
+        value = 60
+    return max(1, min(value, 180))
+
+def _safe_filename(value, fallback='slides'):
+    value = (value or fallback).strip()
+    safe = ''.join(c if c.isalnum() or c in ' -_' else '_' for c in value)
+    safe = re.sub(r'\s+', '-', safe).strip('-_')
+    return safe[:80] or fallback
 
 # --- Command handlers ---
 
@@ -150,6 +220,54 @@ def handle_lark(args):
         cmd = ['npx', '@larksuite/cli', 'docs', '+fetch',
                '--api-version', 'v2', '--doc-format', 'markdown', '--doc', doc_url]
         return run_command(cmd)
+
+    elif action == 'cli_help':
+        argv = args.get('argv') or []
+        if not argv:
+            argv = ['help']
+        elif '--help' not in argv and '-h' not in argv:
+            argv = argv + ['--help']
+        return _run_lark_cli(argv, timeout=30)
+
+    elif action == 'schema':
+        method = args.get('method', '')
+        if not method or not isinstance(method, str):
+            return {'success': False, 'error': 'schema method is required'}
+        output_format = args.get('format', 'json')
+        if output_format not in ('json', 'pretty'):
+            output_format = 'json'
+        return _run_lark_cli(['schema', method, '--format', output_format], timeout=30)
+
+    elif action == 'api':
+        method = str(args.get('method', '')).upper()
+        path = args.get('path', '')
+        if method not in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE'):
+            return {'success': False, 'error': 'method must be GET, POST, PUT, PATCH, or DELETE'}
+        if not isinstance(path, str) or not path.startswith('/open-apis/'):
+            return {'success': False, 'error': 'path must start with /open-apis/'}
+
+        argv = ['api', method, path, '--format', 'json']
+        params = _parse_json_maybe(args.get('params'))
+        data = _parse_json_maybe(args.get('data'))
+        if params:
+            argv.extend(['--params', params])
+        if data:
+            argv.extend(['--data', data])
+        if args.get('as') in ('user', 'bot'):
+            argv.extend(['--as', args.get('as')])
+        if args.get('page_all'):
+            argv.append('--page-all')
+        if args.get('jq'):
+            argv.extend(['--jq', str(args.get('jq'))])
+        if args.get('dry_run'):
+            argv.append('--dry-run')
+        return _run_lark_cli(argv, timeout=_timeout_from_args(args))
+
+    elif action == 'run':
+        argv = args.get('argv') or []
+        if args.get('dry_run') and '--dry-run' not in argv:
+            argv = argv + ['--dry-run']
+        return _run_lark_cli(argv, timeout=_timeout_from_args(args))
 
     elif action == 'update_doc':
         doc_url = args.get('url', args.get('doc_id', ''))
@@ -250,6 +368,111 @@ document.addEventListener('keydown', e => {{
         'path': output_path,
         'url': f'file://{output_path}',
     }
+
+def _extract_doc_title(markdown, fallback):
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith('#'):
+            return stripped.lstrip('#').strip() or fallback
+    return fallback
+
+def _build_frontend_slides_prompt(title, source_path, output_path, style, slide_count):
+    style_text = style or '自动选择一个与内容气质匹配、非模板化的 distinctive style'
+    count_text = str(slide_count or '10-14')
+    return f'''/frontend-slides
+
+请把飞书文档转换成一份精美、可演示的 HTML presentation。
+
+输入文档：
+{source_path}
+
+输出文件：
+{output_path}
+
+要求：
+- 标题：{title}
+- 页数：约 {count_text} 页，内容多时请拆页，不要拥挤
+- 风格：{style_text}
+- 使用 frontend-slides skill 的规则生成单文件 HTML
+- 每一页都必须 100vh/100dvh 内完整显示，不能滚动
+- 使用独特字体、强视觉层次、CSS 动效和精心排版，避免普通模板感
+- 不要向用户提问，直接根据文档内容做合理设计决策
+- 保留文档中的核心观点、结构、数据和行动项
+- 生成完成后只简要说明输出路径
+'''
+
+def handle_frontend_slides(args):
+    doc_url = args.get('url', '')
+    if not doc_url:
+        return {'success': False, 'error': 'url is required'}
+
+    mode = args.get('mode', 'prepare')
+    if mode not in ('prepare', 'generate'):
+        mode = 'prepare'
+
+    fetch_result = handle_lark({'action': 'fetch_doc', 'url': doc_url})
+    if not fetch_result.get('success'):
+        return {
+            'success': False,
+            'error': 'Failed to fetch Lark doc',
+            'fetch_result': fetch_result,
+        }
+
+    markdown = fetch_result.get('stdout', '').strip()
+    if not markdown:
+        return {'success': False, 'error': 'Fetched Lark doc is empty', 'fetch_result': fetch_result}
+
+    title = args.get('title') or _extract_doc_title(markdown, 'lark-doc-slides')
+    slug = _safe_filename(title, 'lark-doc-slides')
+    base_dir = os.path.expanduser(f'~/ai-chat-extension/output/frontend-slides/{slug}-{int(time.time())}')
+    os.makedirs(base_dir, exist_ok=True)
+
+    source_path = os.path.join(base_dir, 'source.md')
+    prompt_path = os.path.join(base_dir, 'frontend-slides-prompt.md')
+    output_path = os.path.join(base_dir, 'slides.html')
+
+    with open(source_path, 'w', encoding='utf-8') as f:
+        f.write(markdown)
+
+    prompt = _build_frontend_slides_prompt(
+        title=title,
+        source_path=source_path,
+        output_path=output_path,
+        style=args.get('style', ''),
+        slide_count=args.get('slide_count'),
+    )
+    with open(prompt_path, 'w', encoding='utf-8') as f:
+        f.write(prompt)
+
+    result = {
+        'success': True,
+        'mode': mode,
+        'title': title,
+        'work_dir': base_dir,
+        'source_path': source_path,
+        'prompt_path': prompt_path,
+        'output_path': output_path,
+        'message': 'Frontend-slides work package prepared',
+    }
+
+    if mode == 'generate':
+        claude = run_command([
+            'claude',
+            '--print',
+            '--add-dir', base_dir,
+            '--permission-mode', 'acceptEdits',
+            '--max-budget-usd', '3',
+            prompt,
+        ], timeout=600)
+        result['generation'] = claude
+        result['success'] = bool(claude.get('success') and os.path.exists(output_path))
+        if result['success']:
+            result['url'] = f'file://{output_path}'
+            result['message'] = 'Frontend-slides presentation generated'
+        else:
+            result['message'] = 'Prepared work package, but automatic generation did not produce slides.html'
+
+    return result
 
 def handle_open(args):
     path = args.get('path', '')
@@ -546,6 +769,8 @@ def main():
             send_message(handle_lark(args))
         elif command == 'slides':
             send_message(handle_slides(args))
+        elif command == 'frontend_slides':
+            send_message(handle_frontend_slides(args))
         elif command == 'open':
             send_message(handle_open(args))
         elif command == 'ping':
