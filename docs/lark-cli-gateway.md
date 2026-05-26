@@ -28,6 +28,12 @@ The generic runner intentionally allows Lark business domains and discovery
 commands, but not credential/profile management commands such as `auth`,
 `config`, `profile`, or `update`.
 
+## Runtime Configuration
+
+Generated files are written under `~/ai-chat-extension/output` by default. Set
+`AI_CHAT_EXTENSION_OUTPUT_DIR` in the native host environment to redirect both
+basic HTML slides and frontend-slides work packages.
+
 ## Frontend Slides From Lark Docs
 
 `lark_doc_to_frontend_slides` bridges Lark docs into the installed

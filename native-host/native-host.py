@@ -49,7 +49,10 @@ def send_message(message):
 # --- JWT for Zhipu API ---
 
 def generate_jwt(api_key):
-    id_part, secret = api_key.split('.')
+    parts = api_key.split('.', 1) if isinstance(api_key, str) else []
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError('Invalid Zhipu API key format. Expected "<id>.<secret>".')
+    id_part, secret = parts
     now = int(time.time())
     header = base64.urlsafe_b64encode(
         json.dumps({"alg": "HS256", "sign_type": "SIGN"}).encode()
@@ -148,6 +151,10 @@ def _safe_filename(value, fallback='slides'):
     safe = re.sub(r'\s+', '-', safe).strip('-_')
     return safe[:80] or fallback
 
+def get_output_dir(*parts):
+    base = os.environ.get('AI_CHAT_EXTENSION_OUTPUT_DIR', '~/ai-chat-extension/output')
+    return os.path.join(os.path.expanduser(base), *parts)
+
 # --- Command handlers ---
 
 def handle_lark(args):
@@ -156,14 +163,14 @@ def handle_lark(args):
     if action == 'search_docs':
         query = args.get('query', '')
         jq_filter = '{ok, results: [.data.results[:5][] | {title: (.title_highlighted | gsub("<h>";"") | gsub("</h>";"")), url: .result_meta.url, type: .result_meta.doc_types, owner: .result_meta.owner_name}]}'
-        cmd = ['npx', '@larksuite/cli', 'docs', '+search', '--query', query, '--jq', jq_filter]
+        cmd = [LARK_CLI_BIN, 'docs', '+search', '--query', query, '--jq', jq_filter]
         return run_command(cmd)
 
     elif action == 'create_doc':
         title = args.get('title', 'Untitled')
         content = args.get('content', '')
         doc_content = f'# {title}\n\n{content}' if content.strip() else f'# {title}'
-        cmd = ['npx', '@larksuite/cli', 'docs', '+create',
+        cmd = [LARK_CLI_BIN, 'docs', '+create',
                '--api-version', 'v2', '--doc-format', 'markdown',
                '--content', doc_content]
         jq_filter = '{ok, doc_url: .data.document.url, doc_id: .data.document.document_id}'
@@ -183,20 +190,20 @@ def handle_lark(args):
     elif action == 'send_message':
         text = args.get('text', '')
         chat_id = args.get('chat_id', '')
-        cmd = ['npx', '@larksuite/cli', 'im', '+messages-send',
+        cmd = [LARK_CLI_BIN, 'im', '+messages-send',
                '--chat-id', chat_id, '--text', text]
         return run_command(cmd)
 
     elif action == 'calendar':
         sub_action = args.get('action_type', args.get('action', 'agenda'))
         if sub_action == 'agenda':
-            cmd = ['npx', '@larksuite/cli', 'calendar', '+agenda']
+            cmd = [LARK_CLI_BIN, 'calendar', '+agenda']
             return run_command(cmd)
         elif sub_action == 'create':
             title = args.get('title', '')
             start_time = args.get('start_time', '')
             end_time = args.get('end_time', '')
-            cmd = ['npx', '@larksuite/cli', 'calendar', '+create',
+            cmd = [LARK_CLI_BIN, 'calendar', '+create',
                    '--title', title]
             if start_time:
                 cmd.extend(['--start-time', start_time])
@@ -207,17 +214,17 @@ def handle_lark(args):
 
     elif action == 'create_task':
         title = args.get('title', '')
-        cmd = ['npx', '@larksuite/cli', 'task', '+create', '--title', title]
+        cmd = [LARK_CLI_BIN, 'task', '+create', '--title', title]
         return run_command(cmd)
 
     elif action == 'search_contact':
         query = args.get('query', '')
-        cmd = ['npx', '@larksuite/cli', 'contact', '+search-user', '--query', query]
+        cmd = [LARK_CLI_BIN, 'contact', '+search-user', '--query', query]
         return run_command(cmd)
 
     elif action == 'fetch_doc':
         doc_url = args.get('url', args.get('doc_id', ''))
-        cmd = ['npx', '@larksuite/cli', 'docs', '+fetch',
+        cmd = [LARK_CLI_BIN, 'docs', '+fetch',
                '--api-version', 'v2', '--doc-format', 'markdown', '--doc', doc_url]
         return run_command(cmd)
 
@@ -273,7 +280,7 @@ def handle_lark(args):
         doc_url = args.get('url', args.get('doc_id', ''))
         markdown = args.get('content', '')
         mode = args.get('mode', 'append')
-        cmd = ['npx', '@larksuite/cli', 'docs', '+update',
+        cmd = [LARK_CLI_BIN, 'docs', '+update',
                '--api-version', 'v2', '--command', mode,
                '--doc-format', 'markdown', '--content', markdown,
                '--doc', doc_url]
@@ -286,7 +293,7 @@ def handle_slides(args):
     content = args.get('content', '')
     style = args.get('style', 'dark')
 
-    output_dir = os.path.expanduser('~/ai-chat-extension/output')
+    output_dir = get_output_dir()
     os.makedirs(output_dir, exist_ok=True)
 
     safe_title = ''.join(c if c.isalnum() or c in ' -_' else '_' for c in title)
@@ -424,7 +431,7 @@ def handle_frontend_slides(args):
 
     title = args.get('title') or _extract_doc_title(markdown, 'lark-doc-slides')
     slug = _safe_filename(title, 'lark-doc-slides')
-    base_dir = os.path.expanduser(f'~/ai-chat-extension/output/frontend-slides/{slug}-{int(time.time())}')
+    base_dir = get_output_dir('frontend-slides', f'{slug}-{int(time.time())}')
     os.makedirs(base_dir, exist_ok=True)
 
     source_path = os.path.join(base_dir, 'source.md')
