@@ -137,6 +137,7 @@ const TOOLS = [
           description: 'lark-cli 后面的参数数组，例如 ["calendar", "--help"] 或 ["docs", "+search", "--help"]。不要包含 lark-cli 本身。',
         },
       },
+      required: ['argv'],
     },
   },
   {
