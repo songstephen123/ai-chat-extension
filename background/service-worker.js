@@ -7,10 +7,31 @@ let voiceActive = false;
 let realtimeSessionReady = false;
 let aiSpeaking = false;
 let pendingToolResponse = false;
+let activeVoiceTabId = null;
+let realtimeConnectTimer = null;
 
-// --- Side Panel init ---
+// --- Browser action: prefer the in-page floating widget ---
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab?.id || !tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'toggle_widget' });
+  } catch (e) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['lib/Readability.min.js', 'content/content.js'],
+      });
+      await chrome.tabs.sendMessage(tab.id, { type: 'toggle_widget' });
+    } catch (innerError) {
+      chrome.runtime.openOptionsPage();
+    }
+  }
+});
 
 // --- Config ---
 
@@ -162,6 +183,63 @@ const TOOLS = [
   },
   {
     type: 'function',
+    name: 'lark_cli_capabilities',
+    description: '查询 Lark CLI 可用业务域、常见任务和推荐调用方式。处理复杂飞书请求前先调用它；domain 传空字符串可查看总览。',
+    parameters: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          description: '业务域名称，例如 docs、drive、base、sheets、slides、im、calendar、task、wiki；空字符串表示总览',
+        },
+      },
+      required: ['domain'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_cli_shortcut',
+    description: '执行 Lark CLI 的 +shortcut 命令。适合 docs +search、sheets +create、calendar +agenda、im +messages-send 等快捷能力；args 用 JSON 字符串传参数。',
+    parameters: {
+      type: 'object',
+      properties: {
+        service: { type: 'string', description: '业务域，例如 docs、drive、base、sheets、calendar、im、task' },
+        shortcut: { type: 'string', description: '以 + 开头的 shortcut，例如 +search、+create、+fetch、+agenda、+messages-send' },
+        args: { type: 'string', description: '参数 JSON 对象字符串，例如 {"query":"项目复盘"} 或 {"title":"周报"}' },
+        as: { type: 'string', enum: ['user', 'bot'], description: '调用身份。个人资源通常 user，应用资源通常 bot' },
+        format: { type: 'string', enum: ['json', 'ndjson', 'table', 'csv', 'pretty'], description: '输出格式，默认由 CLI 决定' },
+        page_all: { type: 'boolean', description: '是否自动分页获取全部结果' },
+        jq: { type: 'string', description: 'jq 过滤表达式，用于裁剪输出' },
+        dry_run: { type: 'boolean', description: '只预览请求，不实际执行写入/删除/权限变更' },
+        timeout_seconds: { type: 'number', description: '超时时间，默认 60 秒，最大 180 秒' },
+      },
+      required: ['service', 'shortcut'],
+    },
+  },
+  {
+    type: 'function',
+    name: 'lark_cli_api_command',
+    description: '执行 Lark CLI 的 service resource method 结构化 API 命令，例如 calendar events create、base records list。比 raw API 更适合模型调用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        service: { type: 'string', description: '业务域，例如 calendar、base、drive、wiki、mail、approval' },
+        resource: { type: 'string', description: '资源名，例如 events、records、files、spaces、messages' },
+        method: { type: 'string', description: '方法名，例如 list、get、create、update、delete' },
+        params: { type: 'string', description: 'URL/query 参数 JSON 字符串，可省略' },
+        data: { type: 'string', description: '请求体 JSON 字符串，可省略' },
+        as: { type: 'string', enum: ['user', 'bot'], description: '调用身份。个人资源通常 user，应用资源通常 bot' },
+        format: { type: 'string', enum: ['json', 'ndjson', 'table', 'csv', 'pretty'], description: '输出格式，默认 json' },
+        page_all: { type: 'boolean', description: '是否自动分页获取全部结果' },
+        jq: { type: 'string', description: 'jq 过滤表达式，用于裁剪输出' },
+        dry_run: { type: 'boolean', description: '只预览请求，不实际执行写入/删除/权限变更' },
+        timeout_seconds: { type: 'number', description: '超时时间，默认 60 秒，最大 180 秒' },
+      },
+      required: ['service', 'resource', 'method'],
+    },
+  },
+  {
+    type: 'function',
     name: 'lark_cli_api',
     description: '通过 Lark CLI 的 raw API 模式调用飞书开放平台接口，可覆盖 shortcuts 未封装的 API',
     parameters: {
@@ -306,6 +384,39 @@ async function executeTool(name, args) {
       case 'lark_cli_schema':
         result = await executeNativeCommand('lark', { action: 'schema', method: args.method, format: args.format || 'json' });
         break;
+      case 'lark_cli_capabilities':
+        result = await executeNativeCommand('lark', { action: 'capabilities', domain: args.domain || '' });
+        break;
+      case 'lark_cli_shortcut':
+        result = await executeNativeCommand('lark', {
+          action: 'shortcut',
+          service: args.service,
+          shortcut: args.shortcut,
+          args: args.args || {},
+          as: args.as,
+          format: args.format,
+          page_all: args.page_all,
+          jq: args.jq,
+          dry_run: args.dry_run,
+          timeout_seconds: args.timeout_seconds,
+        });
+        break;
+      case 'lark_cli_api_command':
+        result = await executeNativeCommand('lark', {
+          action: 'api_command',
+          service: args.service,
+          resource: args.resource,
+          method: args.method,
+          params: args.params,
+          data: args.data,
+          as: args.as,
+          format: args.format,
+          page_all: args.page_all,
+          jq: args.jq,
+          dry_run: args.dry_run,
+          timeout_seconds: args.timeout_seconds,
+        });
+        break;
       case 'lark_cli_api':
         result = await executeNativeCommand('lark', {
           action: 'api',
@@ -418,21 +529,32 @@ async function executeNativeCommand(command, args) {
 // --- Voice mode (Native Messaging WebSocket proxy) ---
 
 async function startVoiceMode() {
+  if (realtimePort) {
+    cleanupVoice({ silent: true });
+  }
+
   const config = await getConfig();
   const apiKey = config.glmApiKey || config.apiKey;
   if (!apiKey) {
     broadcastToSidePanel({ type: 'voice_status', status: 'error: 请先在设置中配置 API Key' });
-    return;
+    return { ok: false, error: '请先在设置中配置 API Key' };
   }
 
   realtimeSessionReady = false;
-  broadcastToSidePanel({ type: 'voice_status', status: 'connecting' });
+  broadcastToSidePanel({ type: 'voice_status', status: 'starting' });
+  if (realtimeConnectTimer) clearTimeout(realtimeConnectTimer);
+  realtimeConnectTimer = setTimeout(() => {
+    if (!realtimeSessionReady) {
+      broadcastToSidePanel({ type: 'voice_status', status: 'error: 连接超时，请检查 Native Host、网络或 API Key' });
+      cleanupVoice({ silent: true });
+    }
+  }, 12000);
 
   try {
     realtimePort = chrome.runtime.connectNative('com.aichat.nativehost');
   } catch (e) {
     broadcastToSidePanel({ type: 'voice_status', status: 'error: 连接创建失败' });
-    return;
+    return { ok: false, error: '连接创建失败：' + e.message };
   }
 
   realtimePort.onMessage.addListener((msg) => {
@@ -445,6 +567,10 @@ async function startVoiceMode() {
         break;
       case 'realtime_error':
         console.error('[Voice] realtime error:', msg.error);
+        if (realtimeConnectTimer) {
+          clearTimeout(realtimeConnectTimer);
+          realtimeConnectTimer = null;
+        }
         broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + msg.error });
         voiceActive = false;
         realtimeSessionReady = false;
@@ -460,22 +586,42 @@ async function startVoiceMode() {
   });
 
   realtimePort.onDisconnect.addListener(() => {
-    if (voiceActive) {
-      cleanupVoice();
+    const error = chrome.runtime.lastError?.message;
+    const wasReady = realtimeSessionReady || voiceActive;
+    realtimePort = null;
+    voiceActive = false;
+    realtimeSessionReady = false;
+    if (realtimeConnectTimer) {
+      clearTimeout(realtimeConnectTimer);
+      realtimeConnectTimer = null;
+    }
+    if (error) {
+      broadcastToSidePanel({ type: 'voice_status', status: 'error: Native Host 连接断开：' + error });
+    } else if (wasReady) {
+      broadcastToSidePanel({ type: 'voice_status', status: 'stopped' });
+    } else {
+      broadcastToSidePanel({ type: 'voice_status', status: 'error: Native Host 未能启动或已退出' });
     }
   });
 
   realtimePort.postMessage({ command: 'realtime', api_key: apiKey });
+  return { ok: true };
 }
 
-function cleanupVoice() {
+function cleanupVoice(options = {}) {
   voiceActive = false;
   realtimeSessionReady = false;
+  if (realtimeConnectTimer) {
+    clearTimeout(realtimeConnectTimer);
+    realtimeConnectTimer = null;
+  }
   if (realtimePort) {
     realtimePort.disconnect();
     realtimePort = null;
   }
-  broadcastToSidePanel({ type: 'voice_status', status: 'stopped' });
+  if (!options.silent) {
+    broadcastToSidePanel({ type: 'voice_status', status: 'stopped' });
+  }
 }
 
 function stopVoiceMode() {
@@ -492,7 +638,7 @@ function sendSessionUpdate() {
       model: REALTIME_MODEL,
       voice: 'tongtong',
       modalities: ['audio', 'text'],
-      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message\n- 查看日历/创建日程 → 调用 lark_calendar\n- 创建飞书任务 → 调用 lark_create_task\n- 搜索飞书联系人 → 调用 lark_search_contact\n- 其他任何飞书/Lark/多维表格/云文档/云盘/知识库/邮件/审批/OKR/妙记/视频会议/白板/应用/通讯录/电子表格/幻灯片能力 → 先用 lark_cli_help 或 lark_cli_schema 查询参数，再用 lark_cli_run 或 lark_cli_api 执行\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides\n- 打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认。',
+      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message；查看日历/创建日程 → 调用 lark_calendar；创建飞书任务 → 调用 lark_create_task；搜索联系人 → 调用 lark_search_contact\n- 任何复杂飞书/Lark 需求，先调用 lark_cli_capabilities 选择业务域；不确定命令或参数时调用 lark_cli_help；不确定 OpenAPI 方法、scope、风险级别时调用 lark_cli_schema\n- Lark CLI 调用优先级：1) +shortcut 命令用 lark_cli_shortcut，例如 docs +search、sheets +create、calendar +agenda；2) service resource method 命令用 lark_cli_api_command，例如 calendar events create、base records list；3) raw HTTP OpenAPI 才用 lark_cli_api；4) 只有确实需要完整自由参数时才用 lark_cli_run\n- 使用 lark_cli_shortcut 的 args 必须是 JSON 对象字符串；使用 lark_cli_api_command 的 params/data 也用 JSON 字符串。不要拼 shell 字符串\n- 个人资源（日历、云空间、邮箱、自己的文档）通常使用 as=user；应用/机器人资源通常使用 as=bot。权限不足时说明缺失授权，不要假装完成\n- 写入、删除、权限变更、批量操作先 dry_run=true 预览；高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认，也不要添加 --yes\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides；打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。',
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },
@@ -524,6 +670,10 @@ function handleRealtimeEvent(event) {
 
     case 'session.updated':
       realtimeSessionReady = true;
+      if (realtimeConnectTimer) {
+        clearTimeout(realtimeConnectTimer);
+        realtimeConnectTimer = null;
+      }
       // Delay mic start so greeting finishes playing first
       setTimeout(() => {
         if (realtimePort && voiceActive) {
@@ -649,19 +799,46 @@ async function handleFunctionCall(event) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
     case 'voice_start':
-      startVoiceMode();
-      sendResponse({ ok: true });
+      activeVoiceTabId = sender.tab?.id ?? null;
+      startVoiceMode().then(sendResponse).catch((e) => {
+        broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + e.message });
+        sendResponse({ ok: false, error: e.message });
+      });
       break;
     case 'voice_stop':
+      if (sender.tab?.id === activeVoiceTabId) {
+        activeVoiceTabId = null;
+      }
       stopVoiceMode();
+      sendResponse({ ok: true });
+      break;
+    case 'open_options':
+      chrome.runtime.openOptionsPage();
       sendResponse({ ok: true });
       break;
   }
   return true;
 });
 
-// --- Broadcast to side panel ---
+// --- Broadcast to visible clients ---
 
 function broadcastToSidePanel(msg) {
+  const audioMessageTypes = new Set(['play_audio', 'stop_playback', 'audio_flush']);
+  const sendToActiveTab = activeVoiceTabId !== null
+    ? chrome.tabs.sendMessage(activeVoiceTabId, msg)
+    : null;
+
+  if (audioMessageTypes.has(msg.type)) {
+    if (sendToActiveTab) {
+      sendToActiveTab.catch(() => chrome.runtime.sendMessage(msg).catch(() => {}));
+    } else {
+      chrome.runtime.sendMessage(msg).catch(() => {});
+    }
+    return;
+  }
+
   chrome.runtime.sendMessage(msg).catch(() => {});
+  if (sendToActiveTab) {
+    sendToActiveTab.catch(() => {});
+  }
 }

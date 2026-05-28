@@ -7,7 +7,6 @@
   "permissions": [
     "storage",
     "activeTab",
-    "sidePanel",
     "nativeMessaging",
     "scripting"
   ],
@@ -15,9 +14,6 @@
     "https://open.bigmodel.cn/",
     "<all_urls>"
   ],
-  "side_panel": {
-    "default_path": "sidepanel/sidepanel.html"
-  },
   "action": {
     "default_title": "AI Voice Assistant",
     "default_icon": {

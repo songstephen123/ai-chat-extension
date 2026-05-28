@@ -1,4 +1,3 @@
-const messagesEl = document.getElementById('messages');
 const btnVoice = document.getElementById('btn-voice');
 const btnSettings = document.getElementById('btn-settings');
 const voiceStatus = document.getElementById('voice-status');
@@ -6,6 +5,9 @@ const voiceStatusDot = document.getElementById('voice-status-dot');
 const voiceStatusText = document.getElementById('voice-status-text');
 const toolStatus = document.getElementById('tool-status');
 const toolStatusText = document.getElementById('tool-status-text');
+const stateTitle = document.getElementById('state-title');
+const stateDetail = document.getElementById('state-detail');
+const activityLine = document.getElementById('activity-line');
 
 let voiceActive = false;
 
@@ -22,31 +24,15 @@ function base64ToInt16(base64) {
   return new Int16Array(bytes.buffer);
 }
 
-// --- Message rendering ---
+// --- Status rendering ---
 
-function addMessage(role, content) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}`;
-  if (content.includes('\n')) {
-    div.innerHTML = content.split('\n').map(line => document.createTextNode(line).textContent).join('<br>');
-  } else {
-    div.textContent = content;
-  }
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return div;
+function showActivity(text) {
+  activityLine.textContent = text;
+  activityLine.classList.remove('hidden');
 }
 
-function addStreamingMessage(role) {
-  const div = document.createElement('div');
-  div.className = `msg ${role}`;
-  messagesEl.appendChild(div);
-  return div;
-}
-
-function appendToMessage(div, chunk) {
-  div.textContent += chunk;
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+function hideActivity() {
+  activityLine.classList.add('hidden');
 }
 
 function showToolStatus(text) {
@@ -105,7 +91,9 @@ function stopPlayback() {
 async function startVoice() {
   voiceActive = true;
   btnVoice.classList.add('active');
+  document.body.classList.add('voice-active');
   voiceStatus.classList.remove('hidden');
+  hideActivity();
   updateVoiceStatus('connecting');
 
   // Pre-create AudioContext during user gesture (click)
@@ -124,7 +112,11 @@ async function startVoice() {
 function stopVoice() {
   voiceActive = false;
   btnVoice.classList.remove('active');
+  document.body.classList.remove('voice-active');
   voiceStatus.classList.add('hidden');
+  stateTitle.textContent = '点击开始语音';
+  stateDetail.textContent = '实时文字内容已隐藏';
+  hideActivity();
   stopPlayback();
   chrome.runtime.sendMessage({ type: 'voice_stop' });
 }
@@ -146,53 +138,57 @@ function updateVoiceStatus(status) {
     connecting: '连接中...',
     stopped: '已停止',
   };
+  const titles = {
+    listening: '正在听你说',
+    speaking: '正在收音',
+    thinking: '正在思考',
+    replying: '正在回复',
+    connecting: '正在连接',
+    stopped: '语音已停止',
+  };
+  const details = {
+    listening: '你可以直接说出飞书、网页或演示稿需求',
+    speaking: '实时转录不会显示在面板里',
+    thinking: '正在理解你的请求',
+    replying: '回复会以语音播放，不显示完整文字',
+    connecting: '正在建立实时语音通道',
+    stopped: '点击按钮可重新开始',
+  };
 
   if (status.startsWith('error: ')) {
     voiceStatusDot.className = 'error';
     voiceStatusText.textContent = status.slice(7);
+    stateTitle.textContent = '连接出错';
+    stateDetail.textContent = status.slice(7);
     return;
   }
 
   voiceStatusDot.className = status;
   voiceStatusText.textContent = labels[status] || status;
+  stateTitle.textContent = titles[status] || '语音助理';
+  stateDetail.textContent = details[status] || '实时文字内容已隐藏';
 }
 
 // --- Listen for messages from service worker ---
 
-let currentAssistantDiv = null;
-let currentUserDiv = null;
-
 chrome.runtime.onMessage.addListener((msg) => {
   switch (msg.type) {
     case 'stream_chunk':
-      if (!currentAssistantDiv) {
-        currentAssistantDiv = addStreamingMessage('assistant');
-      }
-      appendToMessage(currentAssistantDiv, msg.content);
       break;
 
     case 'stream_end':
-      currentAssistantDiv = null;
+      showActivity('语音回复完成');
       break;
 
     case 'stream_error':
-      if (!currentAssistantDiv) {
-        currentAssistantDiv = addStreamingMessage('assistant');
-      }
-      currentAssistantDiv.textContent = 'Error: ' + msg.error;
-      currentAssistantDiv = null;
+      showActivity('回复出错：' + msg.error);
       break;
 
     case 'user_transcript':
-      if (!currentUserDiv) {
-        currentUserDiv = addMessage('user', msg.text);
-      } else {
-        currentUserDiv.textContent = msg.text;
-      }
       break;
 
     case 'user_transcript_done':
-      currentUserDiv = null;
+      showActivity('已收到你的语音');
       break;
 
     case 'tool_call':

@@ -75,6 +75,71 @@ LARK_ALLOWED_ROOTS = {
 }
 LARK_BLOCKED_ARGS = {'--yes'}
 
+LARK_CAPABILITY_CATALOG = {
+    'docs': {
+        'summary': '云文档 Docx：搜索、读取、创建、更新 Markdown 文档。',
+        'shortcuts': ['+search', '+fetch', '+create', '+update'],
+        'examples': [
+            'docs +search --query "项目复盘"',
+            'docs +fetch --doc <url-or-token> --doc-format markdown',
+        ],
+    },
+    'drive': {
+        'summary': '云空间：文件/文件夹上传下载、权限、评论、删除等。',
+        'shortcuts': ['+upload', '+download', '+delete'],
+        'examples': ['drive +upload --file ./report.pdf', 'drive +download --file-token <token>'],
+    },
+    'base': {
+        'summary': '多维表格 Base：应用、数据表、字段、记录、视图、仪表盘、表单、自动化。',
+        'shortcuts': ['+search', '+records-list', '+records-create', '+records-update'],
+        'examples': ['base +search --query "客户"', 'base records list --format json'],
+    },
+    'sheets': {
+        'summary': '电子表格：创建表格、工作表、范围读写、格式和数据处理。',
+        'shortcuts': ['+create', '+read', '+write'],
+        'examples': ['sheets +create --title "周报"', 'sheets +read --spreadsheet-token <token>'],
+    },
+    'slides': {
+        'summary': '飞书幻灯片：创建演示文稿、读取/编辑页面和元素。',
+        'shortcuts': ['+create'],
+        'examples': ['slides +create --title "产品方案"'],
+    },
+    'im': {
+        'summary': '即时通讯：发送消息、管理群聊、查询消息。',
+        'shortcuts': ['+messages-send'],
+        'examples': ['im +messages-send --chat-id <chat_id> --text "hello"'],
+    },
+    'calendar': {
+        'summary': '日历：日程查询、创建、更新、参与人管理。',
+        'shortcuts': ['+agenda', '+create'],
+        'examples': ['calendar +agenda --as user', 'calendar events create --as user --data {...}'],
+    },
+    'task': {
+        'summary': '任务：创建、查询、更新任务和清单。',
+        'shortcuts': ['+create'],
+        'examples': ['task +create --title "跟进合同"'],
+    },
+    'mail': {
+        'summary': '邮箱：草稿、发送、回复、转发和邮件查询。',
+        'shortcuts': [],
+        'examples': ['mail messages list --as user --format json'],
+    },
+    'wiki': {
+        'summary': '知识库：空间、节点、成员、文档树管理。',
+        'shortcuts': [],
+        'examples': ['wiki spaces list --format json'],
+    },
+    'approval': {'summary': '审批：审批定义、实例、任务查询与处理。', 'shortcuts': [], 'examples': []},
+    'contact': {'summary': '通讯录：搜索用户、部门、邮箱/姓名解析 open_id。', 'shortcuts': ['+search-user'], 'examples': ['contact +search-user --query "张三"']},
+    'minutes': {'summary': '妙记：按关键词、所有者、参与者查询妙记内容。', 'shortcuts': [], 'examples': []},
+    'vc': {'summary': '视频会议：会议历史、纪要产物、章节、逐字稿。', 'shortcuts': [], 'examples': []},
+    'whiteboard': {'summary': '画板：查询、编辑、导出画板。', 'shortcuts': [], 'examples': []},
+    'okr': {'summary': 'OKR：周期、目标、关键结果查看和编辑。', 'shortcuts': [], 'examples': []},
+    'attendance': {'summary': '考勤：查询自己的打卡和考勤记录。', 'shortcuts': [], 'examples': []},
+    'apps': {'summary': '妙搭/应用：部署本地 HTML 应用等。', 'shortcuts': [], 'examples': []},
+    'markdown': {'summary': 'Markdown 文档：查看、创建、上传、编辑和比较。', 'shortcuts': [], 'examples': []},
+}
+
 def run_command(cmd, timeout=60):
     try:
         env = os.environ.copy()
@@ -97,6 +162,95 @@ def _parse_json_maybe(value):
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
     return str(value)
+
+def _object_from_json_maybe(value, field_name):
+    if value is None or value == '':
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            raise ValueError(f'{field_name} must be a JSON object string')
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError(f'{field_name} must be an object')
+
+def _flag_name(key):
+    name = str(key).strip().replace('_', '-')
+    if not name:
+        raise ValueError('flag name must not be empty')
+    if name.startswith('-'):
+        raise ValueError('flag names must be passed without leading dashes')
+    return '--' + name
+
+def _append_object_flags(argv, values):
+    for key, value in values.items():
+        flag = _flag_name(key)
+        if flag in LARK_BLOCKED_ARGS:
+            raise ValueError('--yes is blocked; high-risk writes must surface confirmation_required to the user')
+        if value is None or value is False:
+            continue
+        if value is True:
+            argv.append(flag)
+            continue
+        argv.append(flag)
+        if isinstance(value, (dict, list)):
+            argv.append(json.dumps(value, ensure_ascii=False))
+        else:
+            argv.append(str(value))
+    return argv
+
+def _append_common_lark_flags(argv, args):
+    output_format = args.get('format')
+    if output_format in ('json', 'ndjson', 'table', 'csv', 'pretty'):
+        argv.extend(['--format', output_format])
+    if args.get('as') in ('user', 'bot'):
+        argv.extend(['--as', args.get('as')])
+    if args.get('page_all'):
+        argv.append('--page-all')
+    if args.get('page_size'):
+        argv.extend(['--page-size', str(args.get('page_size'))])
+    if args.get('page_limit'):
+        argv.extend(['--page-limit', str(args.get('page_limit'))])
+    if args.get('page_delay'):
+        argv.extend(['--page-delay', str(args.get('page_delay'))])
+    if args.get('output'):
+        argv.extend(['--output', str(args.get('output'))])
+    if args.get('jq'):
+        argv.extend(['--jq', str(args.get('jq'))])
+    if args.get('dry_run'):
+        argv.append('--dry-run')
+    return argv
+
+def _lark_capabilities(domain=''):
+    domain = (domain or '').strip()
+    recommended_flow = [
+        '复杂或不熟悉的需求先查 lark_cli_capabilities，再查 lark_cli_help 或 lark_cli_schema。',
+        '优先使用 shortcut 处理 +命令；service/resource/method API 用 api_command；底层 raw HTTP 才用 api。',
+        '写入、删除、权限、批量操作先 dry_run；个人资源通常使用 --as user，应用资源使用 --as bot。',
+    ]
+    if domain:
+        capability = LARK_CAPABILITY_CATALOG.get(domain)
+        if not capability:
+            return {
+                'success': False,
+                'error': f'Unknown Lark domain: {domain}',
+                'domains': sorted(LARK_CAPABILITY_CATALOG.keys()),
+            }
+        return {
+            'success': True,
+            'domain': domain,
+            'capability': capability,
+            'recommended_flow': recommended_flow,
+        }
+    return {
+        'success': True,
+        'domains': sorted(LARK_CAPABILITY_CATALOG.keys()),
+        'capabilities': LARK_CAPABILITY_CATALOG,
+        'recommended_flow': recommended_flow,
+    }
 
 def _normalize_lark_argv(argv):
     if argv is None:
@@ -159,6 +313,9 @@ def get_output_dir(*parts):
 
 def handle_lark(args):
     action = args.get('action', '')
+
+    if action == 'capabilities':
+        return _lark_capabilities(args.get('domain', ''))
 
     if action == 'search_docs':
         query = args.get('query', '')
@@ -268,6 +425,44 @@ def handle_lark(args):
             argv.extend(['--jq', str(args.get('jq'))])
         if args.get('dry_run'):
             argv.append('--dry-run')
+        return _run_lark_cli(argv, timeout=_timeout_from_args(args))
+
+    elif action == 'shortcut':
+        service = str(args.get('service', '')).strip()
+        shortcut = str(args.get('shortcut', '')).strip()
+        if service not in LARK_ALLOWED_ROOTS or service in ('api', 'schema', 'help', 'doctor'):
+            return {'success': False, 'error': f'Unsupported Lark service for shortcut: {service}'}
+        if not shortcut.startswith('+') or ' ' in shortcut:
+            return {'success': False, 'error': 'shortcut must be a single +command token, for example +search'}
+        try:
+            shortcut_args = _object_from_json_maybe(args.get('args'), 'args')
+            argv = [service, shortcut]
+            _append_object_flags(argv, shortcut_args)
+            _append_common_lark_flags(argv, args)
+        except ValueError as e:
+            return {'success': False, 'error': str(e)}
+        return _run_lark_cli(argv, timeout=_timeout_from_args(args))
+
+    elif action == 'api_command':
+        service = str(args.get('service', '')).strip()
+        resource = str(args.get('resource', '')).strip()
+        method = str(args.get('method', '')).strip()
+        if service not in LARK_ALLOWED_ROOTS or service in ('api', 'schema', 'help', 'doctor'):
+            return {'success': False, 'error': f'Unsupported Lark service for API command: {service}'}
+        if not resource or resource.startswith('-') or ' ' in resource:
+            return {'success': False, 'error': 'resource must be a single lark-cli resource token'}
+        if not method or method.startswith('-') or ' ' in method:
+            return {'success': False, 'error': 'method must be a single lark-cli method token'}
+
+        output_format = args.get('format') if args.get('format') in ('json', 'ndjson', 'table', 'csv', 'pretty') else 'json'
+        argv = [service, resource, method, '--format', output_format]
+        params = _parse_json_maybe(args.get('params'))
+        data = _parse_json_maybe(args.get('data'))
+        if params:
+            argv.extend(['--params', params])
+        if data:
+            argv.extend(['--data', data])
+        _append_common_lark_flags(argv, {**args, 'format': None})
         return _run_lark_cli(argv, timeout=_timeout_from_args(args))
 
     elif action == 'run':

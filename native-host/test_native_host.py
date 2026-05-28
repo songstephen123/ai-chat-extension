@@ -2,6 +2,7 @@ import importlib.util
 import os
 import tempfile
 import unittest
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,6 +77,81 @@ class NativeHostTest(unittest.TestCase):
             self.native_host.run_command = original
 
         self.assertEqual([cmd[0] for cmd in calls], ["lark-cli", "lark-cli", "lark-cli"])
+
+    def test_lark_capabilities_exposes_core_domains(self):
+        result = self.native_host.handle_lark({"action": "capabilities"})
+
+        self.assertTrue(result["success"])
+        self.assertIn("base", result["domains"])
+        self.assertIn("sheets", result["domains"])
+        self.assertIn("docs", result["domains"])
+        self.assertIn("recommended_flow", result)
+
+    def test_lark_shortcut_builds_structured_argv(self):
+        calls = []
+
+        def fake_run_command(cmd, timeout=60):
+            calls.append(cmd)
+            return {"success": True, "stdout": "{}", "stderr": "", "returncode": 0}
+
+        original = self.native_host.run_command
+        self.native_host.run_command = fake_run_command
+        try:
+            result = self.native_host.handle_lark({
+                "action": "shortcut",
+                "service": "sheets",
+                "shortcut": "+create",
+                "args": {"title": "周报"},
+                "dry_run": True,
+            })
+        finally:
+            self.native_host.run_command = original
+
+        self.assertTrue(result["success"])
+        self.assertEqual(calls[0], ["lark-cli", "sheets", "+create", "--title", "周报", "--dry-run"])
+
+    def test_lark_api_command_builds_service_resource_method_argv(self):
+        calls = []
+
+        def fake_run_command(cmd, timeout=60):
+            calls.append(cmd)
+            return {"success": True, "stdout": "{}", "stderr": "", "returncode": 0}
+
+        original = self.native_host.run_command
+        self.native_host.run_command = fake_run_command
+        try:
+            result = self.native_host.handle_lark({
+                "action": "api_command",
+                "service": "calendar",
+                "resource": "events",
+                "method": "create",
+                "params": {"calendar_id": "primary"},
+                "data": {"summary": "站会"},
+                "as": "user",
+            })
+        finally:
+            self.native_host.run_command = original
+
+        self.assertTrue(result["success"])
+        self.assertEqual(calls[0][:5], ["lark-cli", "calendar", "events", "create", "--format"])
+        self.assertEqual(calls[0][5], "json")
+        self.assertIn("--params", calls[0])
+        self.assertIn(json.dumps({"calendar_id": "primary"}, ensure_ascii=False), calls[0])
+        self.assertIn("--data", calls[0])
+        self.assertIn(json.dumps({"summary": "站会"}, ensure_ascii=False), calls[0])
+        self.assertIn("--as", calls[0])
+        self.assertIn("user", calls[0])
+
+    def test_lark_shortcut_rejects_blocked_confirmation_flag(self):
+        result = self.native_host.handle_lark({
+            "action": "shortcut",
+            "service": "drive",
+            "shortcut": "+delete",
+            "args": {"yes": True},
+        })
+
+        self.assertFalse(result["success"])
+        self.assertIn("--yes is blocked", result["error"])
 
 
 if __name__ == "__main__":
