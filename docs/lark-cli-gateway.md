@@ -5,13 +5,16 @@ The extension exposes Lark CLI through the native host in two layers:
 1. High-frequency tools such as `lark_search_docs`, `lark_create_doc`, and
    `lark_calendar`.
 2. Generic gateway tools that can discover and call the wider CLI surface:
-   `lark_cli_help`, `lark_cli_schema`, `lark_cli_api`, and `lark_cli_run`.
+   `lark_cli_help`, `lark_cli_schema`, `lark_cli_api`,
+   `lark_cli_api_command`, `lark_cli_shortcut`, `lark_cli_run`, and
+   `lark_cli_passthrough`.
 
 The generic tools mirror Lark CLI's own three-layer model:
 
 - Shortcuts: `lark_cli_run({ argv: ["calendar", "+agenda"] })`
 - API commands: `lark_cli_run({ argv: ["calendar", "events", "instance_view", "--params", "{...}"] })`
 - Raw API: `lark_cli_api({ method: "GET", path: "/open-apis/calendar/v4/calendars" })`
+- Full passthrough: `lark_cli_passthrough({ argv_json: "[\"base\",\"records\",\"list\",\"--page-all\"]" })`
 
 Before using unfamiliar commands, the assistant should call `lark_cli_help` or
 `lark_cli_schema` to inspect command parameters, scopes, identity requirements,
@@ -27,6 +30,14 @@ assistant must explain the risk to the user and wait for explicit confirmation.
 The generic runner intentionally allows Lark business domains and discovery
 commands, but not credential/profile management commands such as `auth`,
 `config`, `profile`, or `update`.
+
+`lark_cli_passthrough` is the least restrictive gateway. It accepts a JSON array
+string containing the arguments after `lark-cli` and executes it as an argv
+array, never as a shell command. This keeps newly added Lark CLI business
+features usable without changing the extension each time. Its safety boundary is
+root-command and confirmation control: only Lark business/discovery roots are
+allowed, and `--yes` or `--yes=<value>` are blocked so high-risk writes must
+surface the CLI's `confirmation_required` envelope to the user.
 
 ## Runtime Configuration
 

@@ -153,6 +153,56 @@ class NativeHostTest(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertIn("--yes is blocked", result["error"])
 
+    def test_lark_passthrough_runs_full_business_argv_json(self):
+        calls = []
+
+        def fake_run_command(cmd, timeout=60):
+            calls.append(cmd)
+            return {"success": True, "stdout": "{}", "stderr": "", "returncode": 0}
+
+        original = self.native_host.run_command
+        self.native_host.run_command = fake_run_command
+        try:
+            result = self.native_host.handle_lark({
+                "action": "passthrough",
+                "argv_json": json.dumps([
+                    "base", "records", "list",
+                    "--params", json.dumps({"app_token": "app123"}, ensure_ascii=False),
+                    "--page-all",
+                    "--jq", ".data.items"
+                ], ensure_ascii=False),
+            })
+        finally:
+            self.native_host.run_command = original
+
+        self.assertTrue(result["success"])
+        self.assertEqual(calls[0], [
+            "lark-cli", "base", "records", "list",
+            "--params", json.dumps({"app_token": "app123"}, ensure_ascii=False),
+            "--page-all",
+            "--jq", ".data.items",
+        ])
+
+    def test_lark_passthrough_rejects_sensitive_roots(self):
+        for root in ("auth", "config", "profile", "update"):
+            with self.subTest(root=root):
+                result = self.native_host.handle_lark({
+                    "action": "passthrough",
+                    "argv_json": json.dumps([root, "--help"]),
+                })
+                self.assertFalse(result["success"])
+                self.assertIn("Blocked lark-cli command root", result["error"])
+
+    def test_lark_passthrough_rejects_yes_variants(self):
+        for arg in ("--yes", "--yes=true", "--yes=false"):
+            with self.subTest(arg=arg):
+                result = self.native_host.handle_lark({
+                    "action": "passthrough",
+                    "argv_json": json.dumps(["drive", "+delete", arg]),
+                })
+                self.assertFalse(result["success"])
+                self.assertIn("--yes is blocked", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

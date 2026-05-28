@@ -73,6 +73,7 @@ LARK_ALLOWED_ROOTS = {
     'docs', 'drive', 'event', 'im', 'mail', 'markdown', 'minutes',
     'okr', 'sheets', 'slides', 'task', 'vc', 'whiteboard', 'wiki',
 }
+LARK_BLOCKED_ROOTS = {'auth', 'config', 'profile', 'update'}
 LARK_BLOCKED_ARGS = {'--yes'}
 
 LARK_CAPABILITY_CATALOG = {
@@ -177,6 +178,20 @@ def _object_from_json_maybe(value, field_name):
             return parsed
     raise ValueError(f'{field_name} must be an object')
 
+def _argv_from_json_maybe(value, field_name='argv_json'):
+    if value is None or value == '':
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            raise ValueError(f'{field_name} must be a JSON array string')
+        if isinstance(parsed, list):
+            return parsed
+    raise ValueError(f'{field_name} must be an array')
+
 def _flag_name(key):
     name = str(key).strip().replace('_', '-')
     if not name:
@@ -265,13 +280,16 @@ def _normalize_lark_argv(argv):
             return None, 'argv contains an invalid NUL byte'
         if part == LARK_CLI_BIN:
             return None, 'argv must not include lark-cli itself'
-        if part in LARK_BLOCKED_ARGS:
+        if part in LARK_BLOCKED_ARGS or part.startswith('--yes='):
             return None, '--yes is blocked; high-risk writes must surface confirmation_required to the user'
         normalized.append(part)
     if len(normalized) > 80:
         return None, 'argv is too long'
     root = normalized[0] if normalized else 'help'
     if root not in LARK_ALLOWED_ROOTS:
+        if root in LARK_BLOCKED_ROOTS:
+            blocked = ', '.join(sorted(LARK_BLOCKED_ROOTS))
+            return None, f'Blocked lark-cli command root: {root}. Blocked roots: {blocked}'
         allowed = ', '.join(sorted(LARK_ALLOWED_ROOTS))
         return None, f'Unsupported lark-cli command root: {root}. Allowed roots: {allowed}'
     return normalized, None
@@ -467,6 +485,17 @@ def handle_lark(args):
 
     elif action == 'run':
         argv = args.get('argv') or []
+        if args.get('dry_run') and '--dry-run' not in argv:
+            argv = argv + ['--dry-run']
+        return _run_lark_cli(argv, timeout=_timeout_from_args(args))
+
+    elif action == 'passthrough':
+        try:
+            argv = _argv_from_json_maybe(args.get('argv_json') or args.get('argv'), 'argv_json')
+        except ValueError as e:
+            return {'success': False, 'error': str(e)}
+        if argv and argv[0] == LARK_CLI_BIN:
+            argv = argv[1:]
         if args.get('dry_run') and '--dry-run' not in argv:
             argv = argv + ['--dry-run']
         return _run_lark_cli(argv, timeout=_timeout_from_args(args))

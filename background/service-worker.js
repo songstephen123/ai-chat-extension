@@ -277,6 +277,23 @@ const TOOLS = [
   },
   {
     type: 'function',
+    name: 'lark_cli_passthrough',
+    description: 'Lark CLI 接近完整能力透传通道。用 JSON array 字符串传 lark-cli 后面的完整 argv；native host 不经 shell 执行，只阻止 auth/config/profile/update、--yes 和非 Lark 业务命令。',
+    parameters: {
+      type: 'object',
+      properties: {
+        argv_json: {
+          type: 'string',
+          description: 'JSON 数组字符串，例如 ["base","records","list","--params","{\\"app_token\\":\\"xxx\\"}","--page-all"]。不要传 shell 字符串。',
+        },
+        timeout_seconds: { type: 'number', description: '超时时间，默认 60 秒，最大 180 秒' },
+        dry_run: { type: 'boolean', description: '对写入、删除、权限、批量操作先追加 --dry-run 预览请求' },
+      },
+      required: ['argv_json'],
+    },
+  },
+  {
+    type: 'function',
     name: 'lark_doc_to_frontend_slides',
     description: '读取飞书文档，并使用 frontend-slides skill 准备或生成精美 HTML/PPT 风格演示稿',
     parameters: {
@@ -434,6 +451,14 @@ async function executeTool(name, args) {
         result = await executeNativeCommand('lark', {
           action: 'run',
           argv: args.argv,
+          timeout_seconds: args.timeout_seconds,
+          dry_run: args.dry_run,
+        });
+        break;
+      case 'lark_cli_passthrough':
+        result = await executeNativeCommand('lark', {
+          action: 'passthrough',
+          argv_json: args.argv_json,
           timeout_seconds: args.timeout_seconds,
           dry_run: args.dry_run,
         });
@@ -638,7 +663,7 @@ function sendSessionUpdate() {
       model: REALTIME_MODEL,
       voice: 'tongtong',
       modalities: ['audio', 'text'],
-      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message；查看日历/创建日程 → 调用 lark_calendar；创建飞书任务 → 调用 lark_create_task；搜索联系人 → 调用 lark_search_contact\n- 任何复杂飞书/Lark 需求，先调用 lark_cli_capabilities 选择业务域；不确定命令或参数时调用 lark_cli_help；不确定 OpenAPI 方法、scope、风险级别时调用 lark_cli_schema\n- Lark CLI 调用优先级：1) +shortcut 命令用 lark_cli_shortcut，例如 docs +search、sheets +create、calendar +agenda；2) service resource method 命令用 lark_cli_api_command，例如 calendar events create、base records list；3) raw HTTP OpenAPI 才用 lark_cli_api；4) 只有确实需要完整自由参数时才用 lark_cli_run\n- 使用 lark_cli_shortcut 的 args 必须是 JSON 对象字符串；使用 lark_cli_api_command 的 params/data 也用 JSON 字符串。不要拼 shell 字符串\n- 个人资源（日历、云空间、邮箱、自己的文档）通常使用 as=user；应用/机器人资源通常使用 as=bot。权限不足时说明缺失授权，不要假装完成\n- 写入、删除、权限变更、批量操作先 dry_run=true 预览；高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认，也不要添加 --yes\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides；打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。',
+      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message；查看日历/创建日程 → 调用 lark_calendar；创建飞书任务 → 调用 lark_create_task；搜索联系人 → 调用 lark_search_contact\n- 任何复杂飞书/Lark 需求，先调用 lark_cli_capabilities 选择业务域；不确定命令或参数时调用 lark_cli_help；不确定 OpenAPI 方法、scope、风险级别时调用 lark_cli_schema\n- Lark CLI 调用优先级：1) +shortcut 命令用 lark_cli_shortcut，例如 docs +search、sheets +create、calendar +agenda；2) service resource method 命令用 lark_cli_api_command，例如 calendar events create、base records list；3) raw HTTP OpenAPI 才用 lark_cli_api；4) CLI 新增能力、复杂业务域或结构化工具覆盖不到时，用 lark_cli_passthrough 传完整 argv_json；5) 只有模型能稳定构造数组时才用 lark_cli_run\n- 使用 lark_cli_passthrough 时，argv_json 必须是 JSON 数组字符串，内容是 lark-cli 后面的参数，例如 ["base","records","list","--params","{\\"app_token\\":\\"xxx\\"}","--page-all"]。不要拼 shell 字符串，不要包含 lark-cli 本身\n- native host 允许 Lark 业务域、api、schema、help、doctor；阻止 auth/config/profile/update、--yes 和非 Lark 命令。因此不要因为工具有限就说不能调用 Lark CLI，优先 discovery 后 passthrough\n- 使用 lark_cli_shortcut 的 args 必须是 JSON 对象字符串；使用 lark_cli_api_command 的 params/data 也用 JSON 字符串\n- 个人资源（日历、云空间、邮箱、自己的文档）通常使用 as=user；应用/机器人资源通常使用 as=bot。权限不足时说明缺失授权，不要假装完成\n- 写入、删除、权限变更、批量操作先 dry_run=true 预览；高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认，也不要添加 --yes\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides；打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。',
       input_audio_format: 'pcm24',
       output_audio_format: 'pcm',
       input_audio_noise_reduction: { type: 'far_field' },
