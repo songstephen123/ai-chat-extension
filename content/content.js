@@ -300,17 +300,20 @@ function injectFloatingWidget() {
         bottom: 18px;
         z-index: 2147483647;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-        color: #eef2f8;
+        color: #1d1d1f;
       }
       .panel {
-        width: 224px;
-        margin-bottom: 10px;
-        padding: 12px;
-        border: 1px solid rgba(75, 197, 189, 0.22);
-        border-radius: 10px;
-        background: rgba(17, 19, 24, 0.94);
-        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-        backdrop-filter: blur(12px);
+        width: 232px;
+        margin-bottom: 11px;
+        padding: 13px;
+        border: 1px solid rgba(60, 60, 67, 0.16);
+        border-radius: 8px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(246, 248, 251, 0.82));
+        box-shadow:
+          0 18px 44px rgba(0, 0, 0, 0.14),
+          inset 0 1px 0 rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(18px);
       }
       .top {
         display: flex;
@@ -321,27 +324,27 @@ function injectFloatingWidget() {
         width: 8px;
         height: 8px;
         border-radius: 999px;
-        background: #8d98aa;
+        background: #94a3b8;
         flex: none;
       }
-      .dot.listening { background: #59c878; animation: pulse 1.5s infinite; }
-      .dot.speaking { background: #58a9f6; animation: pulse 0.8s infinite; }
-      .dot.thinking { background: #f0b854; animation: pulse 1s infinite; }
-      .dot.replying { background: #4bc5bd; animation: pulse 0.7s infinite; }
-      .dot.connecting { background: #f17c56; animation: pulse 0.5s infinite; }
-      .dot.error { background: #e45d55; }
+      .dot.listening { background: #34c759; animation: pulse 1.5s infinite; }
+      .dot.speaking { background: #007aff; animation: pulse 0.8s infinite; }
+      .dot.thinking { background: #ffcc00; animation: pulse 1s infinite; }
+      .dot.replying { background: #5ac8fa; animation: pulse 0.7s infinite; }
+      .dot.connecting { background: #ff9500; animation: pulse 0.5s infinite; }
+      .dot.error { background: #ff3b30; }
       .copy {
         min-width: 0;
         flex: 1;
       }
       .title {
         font: 650 13px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-        color: #eef2f8;
+        color: #1d1d1f;
       }
       .detail {
         margin-top: 2px;
         font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-        color: #8d98aa;
+        color: #6e6e73;
       }
       .controls {
         display: flex;
@@ -349,41 +352,43 @@ function injectFloatingWidget() {
         flex: none;
       }
       .icon-button {
-        width: 26px;
-        height: 26px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(60, 60, 67, 0.14);
         border-radius: 7px;
-        background: rgba(255, 255, 255, 0.05);
-        color: #c6d0df;
+        background: rgba(255, 255, 255, 0.68);
+        color: #3a3a3c;
         cursor: pointer;
         display: grid;
         place-items: center;
         padding: 0;
       }
+      .icon-button:hover {
+        border-color: rgba(0, 122, 255, 0.28);
+        color: #007aff;
+      }
       .tool {
         margin-top: 10px;
-        padding: 8px;
+        padding: 9px 10px;
         border-radius: 8px;
-        background: rgba(75, 197, 189, 0.08);
-        color: #8ee1dc;
+        background: rgba(0, 122, 255, 0.08);
+        color: #005bb5;
         font: 12px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
       }
       .voice-button {
-        width: 52px;
-        height: 52px;
+        width: 56px;
+        height: 56px;
         margin-left: auto;
-        border: 1px solid rgba(255, 255, 255, 0.18);
+        border: 1px solid rgba(255, 255, 255, 0.72);
         border-radius: 999px;
         background:
-          radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.46), transparent 25%),
-          radial-gradient(circle at 72% 78%, rgba(255, 91, 177, 0.34), transparent 34%),
-          linear-gradient(145deg, #22f6cf 0%, #32a6ff 58%, #7c5cff 100%);
+          radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.72), transparent 24%),
+          linear-gradient(145deg, #5ac8fa 0%, #0a84ff 62%, #0071e3 100%);
         color: white;
         box-shadow:
-          0 18px 36px rgba(8, 18, 28, 0.24),
-          0 0 0 7px rgba(34, 246, 207, 0.12),
-          0 0 28px rgba(50, 166, 255, 0.34),
-          inset 0 1px 0 rgba(255, 255, 255, 0.42);
+          0 18px 36px rgba(0, 122, 255, 0.24),
+          0 0 0 7px rgba(90, 200, 250, 0.16),
+          inset 0 1px 0 rgba(255, 255, 255, 0.62);
         cursor: grab;
         display: grid;
         place-items: center;
@@ -394,12 +399,12 @@ function injectFloatingWidget() {
       .voice-button::before {
         content: "";
         position: absolute;
-        inset: 7px;
+        inset: 8px;
         border-radius: inherit;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.28);
         background:
-          linear-gradient(150deg, rgba(255, 255, 255, 0.2), transparent 42%),
-          rgba(5, 14, 23, 0.08);
+          linear-gradient(150deg, rgba(255, 255, 255, 0.26), transparent 42%),
+          rgba(255, 255, 255, 0.08);
       }
       .voice-button:active {
         cursor: grabbing;
@@ -407,16 +412,14 @@ function injectFloatingWidget() {
       }
       .voice-button.active {
         background:
-          radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.42), transparent 25%),
-          radial-gradient(circle at 76% 78%, rgba(255, 205, 85, 0.34), transparent 36%),
-          linear-gradient(145deg, #ff7a5c 0%, #ff3f8f 58%, #8c4dff 100%);
+          radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.68), transparent 24%),
+          linear-gradient(145deg, #ff9f0a 0%, #ff453a 58%, #bf5af2 100%);
         color: white;
-        border-color: rgba(255, 255, 255, 0.18);
+        border-color: rgba(255, 255, 255, 0.72);
         box-shadow:
-          0 18px 36px rgba(109, 23, 40, 0.24),
-          0 0 0 7px rgba(255, 63, 143, 0.14),
-          0 0 30px rgba(255, 122, 92, 0.3),
-          inset 0 1px 0 rgba(255, 255, 255, 0.4);
+          0 18px 36px rgba(255, 69, 58, 0.24),
+          0 0 0 7px rgba(255, 69, 58, 0.14),
+          inset 0 1px 0 rgba(255, 255, 255, 0.58);
       }
       .voice-button svg {
         pointer-events: none;
