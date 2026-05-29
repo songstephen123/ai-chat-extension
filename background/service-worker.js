@@ -28,6 +28,7 @@ const REALTIME_PROVIDERS = {
     defaultEndpoint: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
     defaultModel: '1.2.1.1',
     defaultVoice: '',
+    appKey: 'PlgvMymc7f3tQnJ6',
     defaultResourceId: 'volc.speech.dialog',
     inputAudioFormat: 'speech_opus',
     outputAudioFormat: 'ogg_opus',
@@ -78,12 +79,8 @@ async function getConfig() {
     chrome.storage.local.get({
       apiKey: '',
       glmApiKey: '',
-      doubaoApiKey: '',
       doubaoAppId: '',
-      doubaoAppKey: '',
       doubaoAccessKey: '',
-      doubaoResourceId: REALTIME_PROVIDERS.doubao.defaultResourceId,
-      doubaoEndpoint: REALTIME_PROVIDERS.doubao.defaultEndpoint,
       realtimeProvider: 'glm',
       realtimeModel: REALTIME_PROVIDERS.glm.defaultModel,
       realtimeVoice: REALTIME_PROVIDERS.glm.defaultVoice,
@@ -91,12 +88,8 @@ async function getConfig() {
       resolve({
         apiKey: values.apiKey || '',
         glmApiKey: values.glmApiKey || '',
-        doubaoApiKey: values.doubaoApiKey || '',
         doubaoAppId: values.doubaoAppId || '',
-        doubaoAppKey: values.doubaoAppKey || '',
         doubaoAccessKey: values.doubaoAccessKey || '',
-        doubaoResourceId: values.doubaoResourceId || REALTIME_PROVIDERS.doubao.defaultResourceId,
-        doubaoEndpoint: values.doubaoEndpoint || REALTIME_PROVIDERS.doubao.defaultEndpoint,
         realtimeProvider: values.realtimeProvider || 'glm',
         realtimeModel: values.realtimeModel || REALTIME_PROVIDERS.glm.defaultModel,
         realtimeVoice: values.realtimeVoice || REALTIME_PROVIDERS.glm.defaultVoice,
@@ -120,10 +113,10 @@ function getRealtimeCredentials(config, adapter) {
   if (adapter.protocol === 'volc_dialogue') {
     return {
       app_id: config.doubaoAppId,
-      app_key: config.doubaoAppKey || config.doubaoApiKey,
+      app_key: adapter.appKey,
       access_key: config.doubaoAccessKey,
-      resource_id: config.doubaoResourceId || adapter.defaultResourceId,
-      endpoint: config.doubaoEndpoint || adapter.defaultEndpoint,
+      resource_id: adapter.defaultResourceId,
+      endpoint: adapter.defaultEndpoint,
     };
   }
   return {
@@ -137,10 +130,7 @@ function validateRealtimeCredentials(credentials, adapter) {
   }
   const missing = [];
   if (!credentials.app_id) missing.push('App ID');
-  if (!credentials.app_key) missing.push('App Key');
   if (!credentials.access_key) missing.push('Access Key');
-  if (!credentials.resource_id) missing.push('Resource ID');
-  if (!credentials.endpoint) missing.push('Endpoint');
   return missing.length ? `请先在设置中配置豆包端到端实时语音：${missing.join('、')}` : '';
 }
 

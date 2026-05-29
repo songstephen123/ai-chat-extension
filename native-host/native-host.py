@@ -936,6 +936,7 @@ REALTIME_PROVIDER_CONFIGS = {
         'default_model': '1.2.1.1',
         'url': 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
         'auth': 'volc_dialogue_headers',
+        'app_key': 'PlgvMymc7f3tQnJ6',
         'default_resource_id': 'volc.speech.dialog',
     },
 }
@@ -974,7 +975,7 @@ def _realtime_headers(api_key='', provider='glm', credentials=None):
     connect_id = credentials.get('connect_id') or f'ai-chat-extension-{int(time.time() * 1000)}'
     return [
         ('X-Api-App-ID', credentials.get('app_id', '')),
-        ('X-Api-App-Key', credentials.get('app_key') or api_key),
+        ('X-Api-App-Key', credentials.get('app_key') or REALTIME_PROVIDER_CONFIGS[provider].get('app_key', '') or api_key),
         ('X-Api-Access-Key', credentials.get('access_key', '')),
         ('X-Api-Resource-Id', credentials.get('resource_id') or REALTIME_PROVIDER_CONFIGS[provider]['default_resource_id']),
         ('X-Api-Connect-Id', connect_id),
@@ -983,7 +984,7 @@ def _realtime_headers(api_key='', provider='glm', credentials=None):
 async def _realtime_proxy(api_key, model='glm-realtime', provider='glm', credentials=None):
     """Connect to a realtime voice WebSocket and bidirectionally forward messages."""
     provider = _safe_realtime_provider(provider)
-    url = (credentials or {}).get('endpoint') or _realtime_url(model, provider)
+    url = _realtime_url(model, provider)
 
     try:
         headers = _realtime_headers(api_key, provider, credentials=credentials)
@@ -1030,8 +1031,6 @@ def handle_realtime(msg):
         'app_id': msg.get('app_id', ''),
         'app_key': msg.get('app_key', ''),
         'access_key': msg.get('access_key', ''),
-        'resource_id': msg.get('resource_id', ''),
-        'endpoint': msg.get('endpoint', ''),
     }
     if _safe_realtime_provider(provider) == 'doubao':
         api_key = api_key or credentials.get('app_key', '')

@@ -230,7 +230,6 @@ class NativeHostTest(unittest.TestCase):
                 provider="doubao",
                 credentials={
                     "app_id": "app-id",
-                    "app_key": "app-key",
                     "access_key": "access-key",
                     "resource_id": "volc.speech.dialog",
                     "connect_id": "connect-id",
@@ -238,7 +237,7 @@ class NativeHostTest(unittest.TestCase):
             ),
             [
                 ("X-Api-App-ID", "app-id"),
-                ("X-Api-App-Key", "app-key"),
+                ("X-Api-App-Key", "PlgvMymc7f3tQnJ6"),
                 ("X-Api-Access-Key", "access-key"),
                 ("X-Api-Resource-Id", "volc.speech.dialog"),
                 ("X-Api-Connect-Id", "connect-id"),
