@@ -19,6 +19,7 @@ import hashlib
 import base64
 import time
 import re
+from urllib.parse import urlencode
 
 try:
     import websockets
@@ -925,18 +926,70 @@ async def _mic_to_ws(ws, loop, mic_start, mic_muted):
         stream.stop()
         stream.close()
 
-async def _realtime_proxy(api_key):
-    """Connect to GLM-Realtime WebSocket and bidirectionally forward messages."""
-    url = 'wss://open.bigmodel.cn/api/paas/v4/realtime?model=glm-realtime'
+REALTIME_PROVIDER_CONFIGS = {
+    'glm': {
+        'default_model': 'glm-realtime',
+        'url': 'wss://open.bigmodel.cn/api/paas/v4/realtime',
+        'auth': 'zhipu_jwt',
+    },
+    'doubao': {
+        'default_model': '1.2.1.1',
+        'url': 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+        'auth': 'volc_dialogue_headers',
+        'default_resource_id': 'volc.speech.dialog',
+    },
+}
 
-    # Generate JWT token from API key
-    try:
+def _safe_realtime_provider(provider):
+    provider = str(provider or 'glm').strip()
+    return provider if provider in REALTIME_PROVIDER_CONFIGS else 'glm'
+
+def _safe_realtime_model(model, provider='glm'):
+    provider_config = REALTIME_PROVIDER_CONFIGS[_safe_realtime_provider(provider)]
+    model = str(model or 'glm-realtime').strip()
+    if not re.match(r'^[A-Za-z0-9._-]{1,80}$', model):
+        return provider_config['default_model']
+    return model
+
+def _realtime_url(model, provider='glm'):
+    provider = _safe_realtime_provider(provider)
+    provider_config = REALTIME_PROVIDER_CONFIGS[provider]
+    if provider_config['auth'] == 'volc_dialogue_headers':
+        return provider_config['url']
+    return provider_config['url'] + '?' + urlencode({
+        'model': _safe_realtime_model(model, provider),
+    })
+
+def _realtime_headers(api_key='', provider='glm', credentials=None):
+    provider = _safe_realtime_provider(provider)
+    auth_type = REALTIME_PROVIDER_CONFIGS[provider]['auth']
+    if auth_type == 'zhipu_jwt':
         token = generate_jwt(api_key)
-    except Exception as e:
-        send_message({'type': 'realtime_error', 'error': f'JWT generation failed: {e}'})
-        return
+        return [('Authorization', f'Bearer {token}')]
+    if auth_type == 'bearer':
+        token = api_key
+        return [('Authorization', f'Bearer {token}')]
 
-    headers = [('Authorization', f'Bearer {token}')]
+    credentials = credentials or {}
+    connect_id = credentials.get('connect_id') or f'ai-chat-extension-{int(time.time() * 1000)}'
+    return [
+        ('X-Api-App-ID', credentials.get('app_id', '')),
+        ('X-Api-App-Key', credentials.get('app_key') or api_key),
+        ('X-Api-Access-Key', credentials.get('access_key', '')),
+        ('X-Api-Resource-Id', credentials.get('resource_id') or REALTIME_PROVIDER_CONFIGS[provider]['default_resource_id']),
+        ('X-Api-Connect-Id', connect_id),
+    ]
+
+async def _realtime_proxy(api_key, model='glm-realtime', provider='glm', credentials=None):
+    """Connect to a realtime voice WebSocket and bidirectionally forward messages."""
+    provider = _safe_realtime_provider(provider)
+    url = (credentials or {}).get('endpoint') or _realtime_url(model, provider)
+
+    try:
+        headers = _realtime_headers(api_key, provider, credentials=credentials)
+    except Exception as e:
+        send_message({'type': 'realtime_error', 'error': f'Auth preparation failed: {e}'})
+        return
 
     try:
         async with websockets.connect(url, additional_headers=headers, proxy=None) as ws:
@@ -971,11 +1024,22 @@ def handle_realtime(msg):
         send_message({'type': 'realtime_error', 'error': 'sounddevice library not installed. Run: /opt/homebrew/bin/pip3 install sounddevice'})
         return
     api_key = msg.get('api_key', '')
+    provider = msg.get('provider', 'glm')
+    model = msg.get('model', REALTIME_PROVIDER_CONFIGS[_safe_realtime_provider(provider)]['default_model'])
+    credentials = {
+        'app_id': msg.get('app_id', ''),
+        'app_key': msg.get('app_key', ''),
+        'access_key': msg.get('access_key', ''),
+        'resource_id': msg.get('resource_id', ''),
+        'endpoint': msg.get('endpoint', ''),
+    }
+    if _safe_realtime_provider(provider) == 'doubao':
+        api_key = api_key or credentials.get('app_key', '')
     if not api_key:
         send_message({'type': 'realtime_error', 'error': 'No API key provided'})
         return
     try:
-        asyncio.run(_realtime_proxy(api_key))
+        asyncio.run(_realtime_proxy(api_key, model=model, provider=provider, credentials=credentials))
     except Exception as e:
         try:
             send_message({'type': 'realtime_error', 'error': str(e)})

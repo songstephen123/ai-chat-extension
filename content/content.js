@@ -178,15 +178,31 @@ function armVoiceStartWatchdog() {
 
 function sendRuntimeMessage(message) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      const err = chrome.runtime.lastError;
-      if (err) {
-        reject(new Error(err.message));
-      } else {
-        resolve(response);
+    try {
+      if (!chrome?.runtime?.id) {
+        reject(new Error('Extension context invalidated.'));
+        return;
       }
-    });
+      chrome.runtime.sendMessage(message, (response) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(new Error(err.message));
+        } else {
+          resolve(response);
+        }
+      });
+    } catch (e) {
+      reject(e);
+    }
   });
+}
+
+function normalizeRuntimeError(error) {
+  const message = error?.message || String(error || '');
+  if (message.includes('Extension context invalidated')) {
+    return '扩展已重新加载，请刷新当前网页后再试';
+  }
+  return message;
 }
 
 async function startVoice() {
@@ -218,7 +234,7 @@ async function startVoice() {
       throw new Error(response?.error || '语音服务未能启动');
     }
   } catch (e) {
-    setWidgetStatus('error: ' + e.message);
+    setWidgetStatus('error: ' + normalizeRuntimeError(e));
     stopPlayback();
   }
 }
@@ -261,7 +277,13 @@ function restorePosition(host) {
 }
 
 function injectFloatingWidget() {
-  if (document.getElementById(WIDGET_ID) || !document.body) return;
+  if (!document.body) return;
+
+  const existing = document.getElementById(WIDGET_ID);
+  if (existing) {
+    if (widgetRoot && existing === widgetRoot.host) return;
+    existing.remove();
+  }
 
   const host = document.createElement('div');
   host.id = WIDGET_ID;
@@ -535,7 +557,11 @@ function injectFloatingWidget() {
     setTimeout(() => { dragState = null; }, 0);
   });
 
-  settings.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'open_options' }));
+  settings.addEventListener('click', () => {
+    sendRuntimeMessage({ type: 'open_options' }).catch((e) => {
+      setWidgetStatus('error: ' + normalizeRuntimeError(e));
+    });
+  });
   collapse.addEventListener('click', () => {
     panel.hidden = true;
   });
@@ -586,7 +612,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 window.addEventListener('beforeunload', () => {
   if (voiceActive) {
-    chrome.runtime.sendMessage({ type: 'voice_stop' });
+    sendRuntimeMessage({ type: 'voice_stop' }).catch(() => {});
   }
 });
 

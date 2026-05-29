@@ -11,11 +11,57 @@
     <h1>Settings</h1>
 
     <section class="section">
-      <h2>智谱 API Key</h2>
+      <h2>实时语音模型</h2>
       <div class="field">
-        <label>API Key</label>
+        <label>Provider</label>
+        <select id="realtimeProvider">
+          <option value="glm">GLM Realtime</option>
+          <option value="doubao">豆包实时语音</option>
+        </select>
+        <small>GLM 使用 JSON Realtime 协议；豆包端到端使用火山 openspeech dialogue 协议。</small>
+      </div>
+      <div class="field">
+        <label>Model / Version</label>
+        <input type="text" id="realtimeModel" placeholder="glm-realtime">
+      </div>
+      <div class="field">
+        <label>Voice</label>
+        <input type="text" id="realtimeVoice" placeholder="tongtong">
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Provider API Key</h2>
+      <div class="field">
+        <label>智谱 API Key</label>
         <input type="password" id="glmApiKey" placeholder="Zhipu API Key">
         <small>从 <a href="https://open.bigmodel.cn" target="_blank">open.bigmodel.cn</a> 获取</small>
+      </div>
+      <div class="field">
+        <label>豆包 / 火山引擎 API Key</label>
+        <input type="password" id="doubaoApiKey" placeholder="Volcengine API Key">
+        <small>旧字段，后续可用 App Key 替代。</small>
+      </div>
+      <div class="field">
+        <label>豆包 App ID</label>
+        <input type="text" id="doubaoAppId" placeholder="X-Api-App-ID">
+      </div>
+      <div class="field">
+        <label>豆包 App Key</label>
+        <input type="password" id="doubaoAppKey" placeholder="X-Api-App-Key">
+      </div>
+      <div class="field">
+        <label>豆包 Access Key</label>
+        <input type="password" id="doubaoAccessKey" placeholder="X-Api-Access-Key">
+      </div>
+      <div class="field">
+        <label>豆包 Resource ID</label>
+        <input type="text" id="doubaoResourceId" placeholder="volc.speech.dialog">
+      </div>
+      <div class="field">
+        <label>豆包 Endpoint</label>
+        <input type="text" id="doubaoEndpoint" placeholder="wss://openspeech.bytedance.com/api/v3/realtime/dialogue">
+        <small>对应端到端实时语音大模型 API 接入文档的 WebSocket Endpoint。</small>
       </div>
     </section>
 

@@ -203,6 +203,48 @@ class NativeHostTest(unittest.TestCase):
                 self.assertFalse(result["success"])
                 self.assertIn("--yes is blocked", result["error"])
 
+    def test_realtime_url_uses_configured_model_safely(self):
+        self.assertEqual(
+            self.native_host._realtime_url("glm-realtime-air"),
+            "wss://open.bigmodel.cn/api/paas/v4/realtime?model=glm-realtime-air",
+        )
+        self.assertEqual(
+            self.native_host._realtime_url("bad/model?x=1"),
+            "wss://open.bigmodel.cn/api/paas/v4/realtime?model=glm-realtime",
+        )
+
+    def test_realtime_url_supports_doubao_provider(self):
+        self.assertEqual(
+            self.native_host._realtime_url("AG-voice-chat-agent", provider="doubao"),
+            "wss://openspeech.bytedance.com/api/v3/realtime/dialogue",
+        )
+        self.assertEqual(
+            self.native_host._realtime_url("bad/model?x=1", provider="doubao"),
+            "wss://openspeech.bytedance.com/api/v3/realtime/dialogue",
+        )
+
+    def test_realtime_headers_use_volc_dialogue_headers_for_doubao(self):
+        self.assertEqual(
+            self.native_host._realtime_headers(
+                "legacy-key",
+                provider="doubao",
+                credentials={
+                    "app_id": "app-id",
+                    "app_key": "app-key",
+                    "access_key": "access-key",
+                    "resource_id": "volc.speech.dialog",
+                    "connect_id": "connect-id",
+                },
+            ),
+            [
+                ("X-Api-App-ID", "app-id"),
+                ("X-Api-App-Key", "app-key"),
+                ("X-Api-Access-Key", "access-key"),
+                ("X-Api-Resource-Id", "volc.speech.dialog"),
+                ("X-Api-Connect-Id", "connect-id"),
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,6 +1,39 @@
-// Service Worker: Side Panel init + GLM-Realtime voice via native proxy + tool routing
+// Service Worker: floating widget + realtime voice provider adapter + tool routing
 
-const REALTIME_MODEL = 'glm-realtime';
+const REALTIME_PROVIDERS = {
+  glm: {
+    id: 'glm',
+    label: 'GLM Realtime',
+    nativeCommand: 'realtime',
+    apiKeyField: 'glmApiKey',
+    defaultModel: 'glm-realtime',
+    defaultVoice: 'tongtong',
+    inputAudioFormat: 'pcm24',
+    outputAudioFormat: 'pcm',
+    supportsNoiseReduction: true,
+    betaFields: {
+      chat_mode: 'audio',
+      tts_source: 'e2e',
+      greeting_config: {
+        enable: true,
+        content: '你好，我是你的AI助理，有什么可以帮助你的吗？',
+      },
+    },
+  },
+  doubao: {
+    id: 'doubao',
+    label: '豆包端到端实时语音',
+    nativeCommand: 'realtime',
+    protocol: 'volc_dialogue',
+    defaultEndpoint: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+    defaultModel: '1.2.1.1',
+    defaultVoice: '',
+    defaultResourceId: 'volc.speech.dialog',
+    inputAudioFormat: 'speech_opus',
+    outputAudioFormat: 'ogg_opus',
+    supportsNoiseReduction: false,
+  },
+};
 
 let realtimePort = null;
 let voiceActive = false;
@@ -9,6 +42,11 @@ let aiSpeaking = false;
 let pendingToolResponse = false;
 let activeVoiceTabId = null;
 let realtimeConnectTimer = null;
+let activeRealtimeAdapter = REALTIME_PROVIDERS.glm;
+let activeRealtimeConfig = {
+  model: REALTIME_PROVIDERS.glm.defaultModel,
+  voice: REALTIME_PROVIDERS.glm.defaultVoice,
+};
 
 // --- Browser action: prefer the in-page floating widget ---
 
@@ -40,13 +78,70 @@ async function getConfig() {
     chrome.storage.local.get({
       apiKey: '',
       glmApiKey: '',
+      doubaoApiKey: '',
+      doubaoAppId: '',
+      doubaoAppKey: '',
+      doubaoAccessKey: '',
+      doubaoResourceId: REALTIME_PROVIDERS.doubao.defaultResourceId,
+      doubaoEndpoint: REALTIME_PROVIDERS.doubao.defaultEndpoint,
+      realtimeProvider: 'glm',
+      realtimeModel: REALTIME_PROVIDERS.glm.defaultModel,
+      realtimeVoice: REALTIME_PROVIDERS.glm.defaultVoice,
     }, (values) => {
       resolve({
         apiKey: values.apiKey || '',
         glmApiKey: values.glmApiKey || '',
+        doubaoApiKey: values.doubaoApiKey || '',
+        doubaoAppId: values.doubaoAppId || '',
+        doubaoAppKey: values.doubaoAppKey || '',
+        doubaoAccessKey: values.doubaoAccessKey || '',
+        doubaoResourceId: values.doubaoResourceId || REALTIME_PROVIDERS.doubao.defaultResourceId,
+        doubaoEndpoint: values.doubaoEndpoint || REALTIME_PROVIDERS.doubao.defaultEndpoint,
+        realtimeProvider: values.realtimeProvider || 'glm',
+        realtimeModel: values.realtimeModel || REALTIME_PROVIDERS.glm.defaultModel,
+        realtimeVoice: values.realtimeVoice || REALTIME_PROVIDERS.glm.defaultVoice,
       });
     });
   });
+}
+
+function getRealtimeAdapter(config) {
+  const providerId = config.realtimeProvider || 'glm';
+  return REALTIME_PROVIDERS[providerId] || null;
+}
+
+function getRealtimeApiKey(config, adapter) {
+  if (adapter.protocol === 'volc_dialogue') return '';
+  const providerKey = config[adapter.apiKeyField] || '';
+  return providerKey || config.apiKey || config.glmApiKey || '';
+}
+
+function getRealtimeCredentials(config, adapter) {
+  if (adapter.protocol === 'volc_dialogue') {
+    return {
+      app_id: config.doubaoAppId,
+      app_key: config.doubaoAppKey || config.doubaoApiKey,
+      access_key: config.doubaoAccessKey,
+      resource_id: config.doubaoResourceId || adapter.defaultResourceId,
+      endpoint: config.doubaoEndpoint || adapter.defaultEndpoint,
+    };
+  }
+  return {
+    api_key: getRealtimeApiKey(config, adapter),
+  };
+}
+
+function validateRealtimeCredentials(credentials, adapter) {
+  if (adapter.protocol !== 'volc_dialogue') {
+    return credentials.api_key ? '' : `请先在设置中配置 ${adapter.label} API Key`;
+  }
+  const missing = [];
+  if (!credentials.app_id) missing.push('App ID');
+  if (!credentials.app_key) missing.push('App Key');
+  if (!credentials.access_key) missing.push('Access Key');
+  if (!credentials.resource_id) missing.push('Resource ID');
+  if (!credentials.endpoint) missing.push('Endpoint');
+  return missing.length ? `请先在设置中配置豆包端到端实时语音：${missing.join('、')}` : '';
 }
 
 // --- Tool definitions (GLM-Realtime Function Calling) ---
@@ -559,12 +654,30 @@ async function startVoiceMode() {
   }
 
   const config = await getConfig();
-  const apiKey = config.glmApiKey || config.apiKey;
-  if (!apiKey) {
-    broadcastToSidePanel({ type: 'voice_status', status: 'error: 请先在设置中配置 API Key' });
-    return { ok: false, error: '请先在设置中配置 API Key' };
+  const adapter = getRealtimeAdapter(config);
+  if (!adapter) {
+    const message = `不支持的实时语音 Provider：${config.realtimeProvider}`;
+    broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + message });
+    return { ok: false, error: message };
   }
 
+  const credentials = getRealtimeCredentials(config, adapter);
+  const credentialError = validateRealtimeCredentials(credentials, adapter);
+  if (credentialError) {
+    broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + credentialError });
+    return { ok: false, error: credentialError };
+  }
+  if (adapter.protocol === 'volc_dialogue') {
+    const message = '豆包端到端实时语音使用火山 openspeech 二进制 dialogue 协议，已完成配置项对齐；还需要实现 StartConnection/StartSession/Opus 音频帧协议后才能开始会话。';
+    broadcastToSidePanel({ type: 'voice_status', status: 'error: ' + message });
+    return { ok: false, error: message };
+  }
+
+  activeRealtimeAdapter = adapter;
+  activeRealtimeConfig = {
+    model: config.realtimeModel || adapter.defaultModel,
+    voice: config.realtimeVoice || adapter.defaultVoice,
+  };
   realtimeSessionReady = false;
   broadcastToSidePanel({ type: 'voice_status', status: 'starting' });
   if (realtimeConnectTimer) clearTimeout(realtimeConnectTimer);
@@ -629,7 +742,12 @@ async function startVoiceMode() {
     }
   });
 
-  realtimePort.postMessage({ command: 'realtime', api_key: apiKey });
+  realtimePort.postMessage({
+    command: adapter.nativeCommand,
+    provider: adapter.id,
+    ...credentials,
+    model: activeRealtimeConfig.model,
+  });
   return { ok: true };
 }
 
@@ -655,35 +773,36 @@ function stopVoiceMode() {
 
 function sendSessionUpdate() {
   if (!realtimePort) return;
+  const adapter = activeRealtimeAdapter || REALTIME_PROVIDERS.glm;
+  const providerConfig = activeRealtimeConfig || {};
+  const session = {
+    model: providerConfig.model || adapter.defaultModel,
+    voice: providerConfig.voice || adapter.defaultVoice,
+    modalities: ['audio', 'text'],
+    instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message；查看日历/创建日程 → 调用 lark_calendar；创建飞书任务 → 调用 lark_create_task；搜索联系人 → 调用 lark_search_contact\n- 任何复杂飞书/Lark 需求，先调用 lark_cli_capabilities 选择业务域；不确定命令或参数时调用 lark_cli_help；不确定 OpenAPI 方法、scope、风险级别时调用 lark_cli_schema\n- Lark CLI 调用优先级：1) +shortcut 命令用 lark_cli_shortcut，例如 docs +search、sheets +create、calendar +agenda；2) service resource method 命令用 lark_cli_api_command，例如 calendar events create、base records list；3) raw HTTP OpenAPI 才用 lark_cli_api；4) CLI 新增能力、复杂业务域或结构化工具覆盖不到时，用 lark_cli_passthrough 传完整 argv_json；5) 只有模型能稳定构造数组时才用 lark_cli_run\n- 使用 lark_cli_passthrough 时，argv_json 必须是 JSON 数组字符串，内容是 lark-cli 后面的参数，例如 ["base","records","list","--params","{\\"app_token\\":\\"xxx\\"}","--page-all"]。不要拼 shell 字符串，不要包含 lark-cli 本身\n- native host 允许 Lark 业务域、api、schema、help、doctor；阻止 auth/config/profile/update、--yes 和非 Lark 命令。因此不要因为工具有限就说不能调用 Lark CLI，优先 discovery 后 passthrough\n- 使用 lark_cli_shortcut 的 args 必须是 JSON 对象字符串；使用 lark_cli_api_command 的 params/data 也用 JSON 字符串\n- 个人资源（日历、云空间、邮箱、自己的文档）通常使用 as=user；应用/机器人资源通常使用 as=bot。权限不足时说明缺失授权，不要假装完成\n- 写入、删除、权限变更、批量操作先 dry_run=true 预览；高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认，也不要添加 --yes\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides；打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。',
+    input_audio_format: adapter.inputAudioFormat,
+    output_audio_format: adapter.outputAudioFormat,
+    temperature: 0.7,
+    max_response_output_tokens: 'inf',
+    tools: TOOLS.map(t => ({
+      type: 'function',
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    })),
+  };
+
+  if (adapter.supportsNoiseReduction) {
+    session.input_audio_noise_reduction = { type: 'far_field' };
+  }
+  if (adapter.betaFields) {
+    session.beta_fields = adapter.betaFields;
+  }
 
   // Client VAD mode: omit turn_detection entirely (null causes 400 errors)
   realtimePort.postMessage({
     type: 'session.update',
-    session: {
-      model: REALTIME_MODEL,
-      voice: 'tongtong',
-      modalities: ['audio', 'text'],
-      instructions: '你是一个全能AI助理，可以通过工具帮助用户完成各种任务。当用户请求以下操作时，你必须调用对应的工具函数：\n- 获取网页内容 → 调用 get_page_content\n- 常见飞书文档操作 → 优先调用 lark_search_docs、lark_fetch_doc、lark_create_doc、lark_update_doc\n- 把飞书文档变成精美演示稿/PPT/HTML slides → 调用 lark_doc_to_frontend_slides，用户明确要直接生成时使用 mode=generate，否则先用 mode=prepare\n- 发飞书消息 → 调用 lark_send_message；查看日历/创建日程 → 调用 lark_calendar；创建飞书任务 → 调用 lark_create_task；搜索联系人 → 调用 lark_search_contact\n- 任何复杂飞书/Lark 需求，先调用 lark_cli_capabilities 选择业务域；不确定命令或参数时调用 lark_cli_help；不确定 OpenAPI 方法、scope、风险级别时调用 lark_cli_schema\n- Lark CLI 调用优先级：1) +shortcut 命令用 lark_cli_shortcut，例如 docs +search、sheets +create、calendar +agenda；2) service resource method 命令用 lark_cli_api_command，例如 calendar events create、base records list；3) raw HTTP OpenAPI 才用 lark_cli_api；4) CLI 新增能力、复杂业务域或结构化工具覆盖不到时，用 lark_cli_passthrough 传完整 argv_json；5) 只有模型能稳定构造数组时才用 lark_cli_run\n- 使用 lark_cli_passthrough 时，argv_json 必须是 JSON 数组字符串，内容是 lark-cli 后面的参数，例如 ["base","records","list","--params","{\\"app_token\\":\\"xxx\\"}","--page-all"]。不要拼 shell 字符串，不要包含 lark-cli 本身\n- native host 允许 Lark 业务域、api、schema、help、doctor；阻止 auth/config/profile/update、--yes 和非 Lark 命令。因此不要因为工具有限就说不能调用 Lark CLI，优先 discovery 后 passthrough\n- 使用 lark_cli_shortcut 的 args 必须是 JSON 对象字符串；使用 lark_cli_api_command 的 params/data 也用 JSON 字符串\n- 个人资源（日历、云空间、邮箱、自己的文档）通常使用 as=user；应用/机器人资源通常使用 as=bot。权限不足时说明缺失授权，不要假装完成\n- 写入、删除、权限变更、批量操作先 dry_run=true 预览；高风险写操作如果返回 confirmation_required，需要先向用户说明风险并等待用户明确确认，不要自行绕过确认，也不要添加 --yes\n- 生成普通 HTML 幻灯片 → 调用 generate_html_slides；打开本地文件 → 调用 open_file\n不要说你做不到，优先发现可用 Lark CLI 命令并调用工具。',
-      input_audio_format: 'pcm24',
-      output_audio_format: 'pcm',
-      input_audio_noise_reduction: { type: 'far_field' },
-      temperature: 0.7,
-      max_response_output_tokens: 'inf',
-      tools: TOOLS.map(t => ({
-        type: 'function',
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters,
-      })),
-      beta_fields: {
-        chat_mode: 'audio',
-        tts_source: 'e2e',
-        greeting_config: {
-          enable: true,
-          content: '你好，我是你的AI助理，有什么可以帮助你的吗？',
-        },
-      },
-    },
+    session,
   });
 }
 

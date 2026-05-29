@@ -1,5 +1,40 @@
-const fields = ['glmApiKey'];
-const defaults = { glmApiKey: '' };
+const providerDefaults = {
+  glm: {
+    model: 'glm-realtime',
+    voice: 'tongtong',
+  },
+  doubao: {
+    model: '1.2.1.1',
+    voice: '',
+    resourceId: 'volc.speech.dialog',
+    endpoint: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+  },
+};
+
+const fields = [
+  'realtimeProvider',
+  'realtimeModel',
+  'realtimeVoice',
+  'glmApiKey',
+  'doubaoApiKey',
+  'doubaoAppId',
+  'doubaoAppKey',
+  'doubaoAccessKey',
+  'doubaoResourceId',
+  'doubaoEndpoint',
+];
+const defaults = {
+  realtimeProvider: 'glm',
+  realtimeModel: providerDefaults.glm.model,
+  realtimeVoice: providerDefaults.glm.voice,
+  glmApiKey: '',
+  doubaoApiKey: '',
+  doubaoAppId: '',
+  doubaoAppKey: '',
+  doubaoAccessKey: '',
+  doubaoResourceId: providerDefaults.doubao.resourceId,
+  doubaoEndpoint: providerDefaults.doubao.endpoint,
+};
 
 // Load saved values
 chrome.storage.local.get(defaults, (values) => {
@@ -7,6 +42,15 @@ chrome.storage.local.get(defaults, (values) => {
     const el = document.getElementById(key);
     if (el) el.value = values[key] || '';
   }
+});
+
+document.getElementById('realtimeProvider').addEventListener('change', (event) => {
+  const preset = providerDefaults[event.target.value];
+  if (!preset) return;
+  document.getElementById('realtimeModel').value = preset.model;
+  document.getElementById('realtimeVoice').value = preset.voice;
+  if (preset.resourceId) document.getElementById('doubaoResourceId').value = preset.resourceId;
+  if (preset.endpoint) document.getElementById('doubaoEndpoint').value = preset.endpoint;
 });
 
 // Save
